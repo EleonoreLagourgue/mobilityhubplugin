@@ -50,12 +50,15 @@ from qgis.core import (
 )
 from qgis.PyQt.QtCore import QVariant
 
-
+import pandas as pd
 class BuildItineraries(QgsProcessingAlgorithm):
-    NODES = "NODES"
+    POP = "POP"
     HUBS = "HUBS"
     DESTINATION = "DESTINATION"
-    MATRICE = "MATRICE"
+    MATRIXPT = "MATRIXPT"
+    MATRIXCAR ="MATRIXCAR"
+    MATRIXBIKE = "MATRIXBIKE"
+    MATRIXWALK = "MATRIXWALK"
     BUDGET = "BUDGET"
     THRESHOLD = "THRESHOLD"
     OUTPUT = "OUTPUT"
@@ -75,20 +78,39 @@ class BuildItineraries(QgsProcessingAlgorithm):
     def groupId(self):
         return "analyse_reseau"
     def initAlgorithm(self, config=None):
-        self.addParameter(QgsProcessingParameterFeatureSource(self.NODES, "Nœuds de population (points)"))
-        self.addParameter(QgsProcessingParameterFeatureSource(self.HUBS, "Hubs candidats (points)"))
-        self.addParameter(QgsProcessingParameterFeatureSource(self.DESTINATION, "Destinations (si différent de nœuds de population) "))
+        self.addParameter(QgsProcessingParameterFeatureSource(self.POP, 
+                                                              "Nœuds de population (points)"))
+        self.addParameter(QgsProcessingParameterFeatureSource(self.HUBS, 
+                                                              "Hubs candidats (points)"))
+        self.addParameter(QgsProcessingParameterFeatureSource(self.DESTINATION, 
+                                                              "Destinations (si différent de nœuds de population) "))
+        self.addParameter(QgsProcessingParameterFile(self.MATRIXPT, 
+                                                              "Matrice de temps transportS en commun",
+                                                              extension = "csv"))
+        self.addParameter(QgsProcessingParameterFile(self.MATRIXCAR, 
+                                                              "Matrice de temps voiture",
+                                                              extension = "csv"))
+        self.addParameter(QgsProcessingParameterFile(self.MATRIXBIKE, 
+                                                              "Matrice de temps vélo",
+                                                              extension = "csv"))
+        self.addParameter(QgsProcessingParameterFile(self.MATRIXWALK, 
+                                                              "Matrice de temps marche",
+                                                              extension = "csv"))
     def processAlgorithm(self, parameters, context, feedback):
-        nodes_src = self.parameterAsSource(parameters, self.NODES, context)#QgsProcessingFeatureSource
+        nodes_src = self.parameterAsSource(parameters, self.POP, context)#QgsProcessingFeatureSource
         hubs_src = self.parameterAsSource(parameters, self.HUBS, context)#QgsProcessingFeatureSource
         dest_src = self.parameterAsSource(parameters, self.DESTINATION, context)#QgsProcessingFeatureSource
-        
+        matrix_pt_path = self.parameterAsFile(parameters, self.MATRIXPT, context)
+
         feedback.pushInfo("Construction des itinéraires potentiels (routage + élimination des dominés)...")
+        matrix_pt = pd.read_csv(matrix_pt_path)
         
         data =...
         feedback.pushInfo(f"{len(data.itineraries)} itinéraires potentiels générés. Résolution du MIP...")
 
-
+    def get_useful_hubs(i, j, hubs_potentiels, 
+                        mat_pt, mat_car, t_pt, t_max, min_improvement):
+        pass
 
 
 
