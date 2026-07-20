@@ -101,13 +101,23 @@ class BuildItineraries(QgsProcessingAlgorithm):
         hubs_src = self.parameterAsSource(parameters, self.HUBS, context)#QgsProcessingFeatureSource
         dest_src = self.parameterAsSource(parameters, self.DESTINATION, context)#QgsProcessingFeatureSource
         matrix_pt_path = self.parameterAsFile(parameters, self.MATRIXPT, context)
+        matrix_b_path = self.parameterAsFile(parameters, self.MATRIXBIKE, context)
+        matrix_car_path = self.parameterAsFile(parameters, self.MATRIXCAR, context)
+        matrix_w_path = self.parameterAsFile(parameters, self.MATRIXWALK, context)
+
 
         feedback.pushInfo("Construction des itinéraires potentiels (routage + élimination des dominés)...")
         matrix_pt = pd.read_csv(matrix_pt_path)
-        
+        matrix_bike = pd.read_csv(matrix_b_path)
+        matrix_car = pd.read_csv(matrix_car_path)
+        matrix_walk = pd.read_csv(matrix_w_path)
+
+        self.itineraries(matrix_pt,matrix_car, matrix_bike, matrix_walk)
         data =...
         feedback.pushInfo(f"{len(data.itineraries)} itinéraires potentiels générés. Résolution du MIP...")
-
+    def itineraries(matrix_pt, matrix_car, matrix_bike, matrix_walk):
+        
+        pass
     def get_useful_hubs(i, j, hubs_potentiels, 
                         mat_pt, mat_car, t_pt, t_max, min_improvement):
         pass
