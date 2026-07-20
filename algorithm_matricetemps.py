@@ -37,9 +37,33 @@ from mobilityhubplugin.conversions import (qgis_layer_to_gdf,
                          write_gdf_to_sink)
 import osmnx as ox
 import networkx as nx
-import panda as pd
+import pandas as pd
+import numpy as np
 def nearest_node(G, lat, lon):
     return ox.nearest_nodes(G, lon, lat)
+def add_nearest_node(layer, G, field_name, colonne_id):
+    nom_champs=[]
+    layer.startEditing()
+    for i in layer.fields():
+        nom_champs.append(i.name())
+    if (field_name not in nom_champs):
+        layer.dataProvider().addAttributes([QgsField(field_name,QVariant.Int)])
+    
+    layer.updateFields()
+    idx = layer.fields().indexFromName(field_name)
+    values = {}
+    for feat in layer.getFeatures():
+        code = feat[colonne_id]
+        geom = feat.geometry().asPoint()
+        node = nearest_node(G, geom.x(), geom.y())
+        values[code] = node
+        layer.changeAttributeValue(feat.id(), idx, values[code])
+        
+        
+    layer.commitChanges()
+    return values
+
+
 
 def lat_lon(layer):
     nom_champs=[]
@@ -47,9 +71,9 @@ def lat_lon(layer):
     for i in layer.fields():
         nom_champs.append(i.name())
     if ("lon" not in nom_champs):
-        layer.dataProvider().addAttributes([QgsField("lon",QVariant.String)])
+        layer.dataProvider().addAttributes([QgsField("lon",QVariant.Int)])
     if ("lat" not in nom_champs):
-        layer.dataProvider().addAttributes([QgsField("lat",QVariant.String)])
+        layer.dataProvider().addAttributes([QgsField("lat",QVariant.Int)])
   
     layer.updateFields()
     layer.commitChanges()
@@ -75,11 +99,14 @@ class MatriceTemps(QgsProcessingAlgorithm):
     NODES = "NODES"
     RESEAU = "RESEAU"
     POP = "POP"
+    IDPOP = "IDPOP"
     HUBS = "HUBS"
+    IDHUB = "IDHUB"
     DESTINATION = "DESTINATION"
+    IDDEST ="IDDEST"
     MODE = "MODE"
     WEIGHT = "WEIGHT"
-   
+    MATRIX = "MATRIX"
    
     
     def createInstance(self):
@@ -100,18 +127,26 @@ class MatriceTemps(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterFeatureSource(self.NODES, 
                                                               "Nœuds du réseau (points)",
                                                               [QgsProcessing.SourceType.TypeVectorPoint]))
-        self.addParameter(QgsProcessingParameterFeatureSource(self.RESEAU, "Lignes du réseau (lignes)"))
+        self.addParameter(QgsProcessingParameterFeatureSource(self.RESEAU, 
+                                                              "Lignes du réseau (lignes)",
+                                                              [QgsProcessing.SourceType.TypeVectorLine]))
 
+        self.addParameter(QgsProcessingParameterField(self.WEIGHT, 
+                                                      "Colonne poids",
+                                                      parentLayerParameterName=self.RESEAU))
+        
         self.addParameter(QgsProcessingParameterFeatureSource(self.POP, 
                                                               "Nœuds de population (points)",
                                                               [QgsProcessing.SourceType.TypeVectorPoint]))
+        self.addParameter(QgsProcessingParameterField(self.IDPOP, 
+                                                      "Colonne id pour la couche de population",
+                                                      parentLayerParameterName=self.POP))
         self.addParameter(QgsProcessingParameterFeatureSource(self.HUBS,
                                                               "Hubs candidats (points)",
                                                               [QgsProcessing.SourceType.TypeVectorPoint]))
-        self.addParameter(QgsProcessingParameterFeatureSource(self.DESTINATION,
-                                                              "Destinations (si différent de nœuds de population) ",
-                                                              [QgsProcessing.SourceType.TypeVectorPoint],
-                                                              optional = True))
+        self.addParameter(QgsProcessingParameterField(self.IDHUB, 
+                                                      "Colonne id pour la couche des hubs",
+                                                      parentLayerParameterName=self.HUBS))
         
         self.addParameter(
         QgsProcessingParameterEnum(
@@ -123,63 +158,86 @@ class MatriceTemps(QgsProcessingAlgorithm):
         optional=False    # <-- rend le paramètre obligatoire
             )
         )
-        self.addParameter(QgsProcessingParameterField(self.WEIGHT, "Colonne poids", parentLayerParameterName=self.INPUT))
+        
+        
+        #----------Paramètres optionnels#----------
+        self.addParameter(QgsProcessingParameterFeatureSource(self.DESTINATION,
+                                                              "Destinations (si différent de nœuds de population) ",
+                                                              [QgsProcessing.SourceType.TypeVectorPoint],
+                                                              optional = True))
+                                                      
+        self.addParameter(QgsProcessingParameterField(self.IDDEST, 
+                                              "Colonne id pour la couche de destination",
+                                              parentLayerParameterName=self.DESTINATION,
+                                              optional = True))
+        
+        
+        
+        
+        self.addParameter(QgsProcessingParameterFileDestination(self.MATRIX, 
+                                                                "Fichier d'emplacement de la matrice de temps",
+                                                                fileFilter='*.csv',
+                                                                defaultValue='*.csv'))
 
     def processAlgorithm(self, parameters, context, feedback):
         pop_layer = self.parameterAsVectorLayer(parameters, self.POP, context)#QgsProcessingFeatureSource
         hubs_layer = self.parameterAsVectorLayer(parameters, self.HUBS, context)#QgsProcessingFeatureSource
         dest_layer = self.parameterAsVectorLayer(parameters, self.DESTINATION, context)#QgsProcessingFeatureSource
         
-        lignes_layer = self.parameterAsVectorLayer(parameters, self.LIGNES, context)#QgsProcessingFeatureSource
+        lignes_layer = self.parameterAsVectorLayer(parameters, self.RESEAU, context)#QgsProcessingFeatureSource
         nodes_layer = self.parameterAsVectorLayer(parameters, self.NODES, context)#QgsProcessingFeatureSource
+        weight = self.parameterAsString(parameters, self.WEIGHT, context)
+        id_pop = self.parameterAsString(parameters, self.IDPOP, context)
+        id_hub = self.parameterAsString(parameters, self.IDHUB, context)
+
+        nom = self.parameterAsString(parameters, self.MODE, context)
+        fichier_sortie=self.parameterAsFileOutput(parameters, self.DESTINATION, context)
 
         feedback.pushInfo("Construction de la matrice de temps ...")
-        nom_champs=[]
         
-        hubs_layer= lat_lon(hubs_layer)
- 
-        pop_layer= lat_lon(pop_layer)
         
-        pop_layer =processing.run("native:mergevectorlayers", {'LAYERS': [hubs_layer, pop_layer],
-                                                    "OUTPUT": "memory:"})["OUTPUT"]
-
-        
-        nom = self.parameterAsString(parameters, self.MODE, context)
         nodes = qgis_layer_to_gdf(nodes_layer)
         edges = qgis_layer_to_gdf(lignes_layer)
         G = ox.graph_from_gdfs(nodes, edges)
-        origin = qgis_layer_to_gdf(pop_layer)
         
-        if dest_layer is None:
-            origin[f"node_{nom}"] = origin.apply(lambda r: nearest_node(G,r["lat"], r["lon"]), axis=1)
-            gdf = origin[f"node_{nom}"]
-     
-        else:
+        node_field = f"node_{nom}"
+        nodes_hubs = add_nearest_node(hubs_layer, G, node_field, id_hub)
+        nodes_pop  = add_nearest_node(pop_layer, G, node_field, id_pop) #renvoie un dict
+        
+        all_nodes = {} #dictionnaire
+        for fid, node in nodes_hubs.items():
+            all_nodes[f"hub_{fid}"] = node
+        for fid, node in nodes_pop.items():
+            all_nodes[f"pop_{fid}"] = node
+        
+        #Si destination différente de pop (pour les POIs)
+        if dest_layer is not None:
+            id_dest = self.parameterAsString(parameters, self.IDDEST, context)
             
-            dest_layer= lat_lon(dest_layer)
-
-            dest = qgis_layer_to_gdf(dest_layer)
-            origin[f"node_{nom}"] = origin.apply(lambda r: nearest_node(G,r["lat"], r["lon"]), axis=1)
-            dest[f"node_{nom}"] = dest.apply(lambda r: nearest_node(G,r["lat"], r["lon"]), axis=1)
-            gdf = pd.concat([origin[f"node_{nom}"],dest[f"node_{nom}"]])
-            
-        print(gdf)
+            nodes_dest = add_nearest_node(dest_layer, G, node_field, id_dest)
+            for fid, node in nodes_dest.items():
+                all_nodes[f"dest_{fid}"] = node
+        
+        
+        
         dict_matrix ={}
         index = []
-        for i, src in gdf.items():
+        for i in all_nodes:
             #Dijkstra depuis src vers tous les autres noeuds
+            src = all_nodes[i]
             lengths = nx.single_source_dijkstra_path_length(
                 G, src, weight=weight)
-            for j, dst in gdf.items():
+            for j in all_nodes:
+                dest = all_nodes[j]
+
                 if dst in lengths:
                     dict_matrix[str(j)] = lengths[dst]/60 #on passe des secondes aux minutes
                 else:
-                    dict_matrix[j] = np.inf
+                    dict_matrix[str(j)] = np.inf
                 index.append(str(i))
         matrix = pd.DataFrame(dict_matrix, index = index)
         
         #renvoie un csv/txt
-        if dest.empty:
-            return matrix, origin
-        else:
-            return matrix, origin,dest
+       
+        matrix.to_csv(fichier_sortie)
+            #return origin,dest
