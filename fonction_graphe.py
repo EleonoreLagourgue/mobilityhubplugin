@@ -460,7 +460,7 @@ def ponderer_distance_velo(graphe):
 
 def ponderer_distance_voiture(graphe,colonne_vitesse):
     
-    nature = ("Chemin", "sentier")
+    nature = ("Chemin", "Sentier", "Escalier")
     restriction = ("Piste cyclable", "Voie verte")
     for u, v, data in graphe.edges(data=True):
         vitesse = data.get(colonne_vitesse, 50)#On met une vitesse de 50km/h par défaut
@@ -484,7 +484,7 @@ def ponderer_distance_voiture(graphe,colonne_vitesse):
         vitesse_numerique = float(vitesse) if vitesse  else 50.0
         
         
-        if vitesse_numerique == 0 or data.get() in nature or data.get() in restriction:
+        if vitesse_numerique == 0 or data.get("nature") in nature or data.get("nature_de_la_restriction") in restriction:
             #On ne peut pas prendre ce tronçon en voiture
             data["travel_time"] = float("inf")
             
