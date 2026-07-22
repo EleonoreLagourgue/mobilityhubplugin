@@ -59,6 +59,9 @@ from collections import defaultdict
 from .optimization_model import  Itinerary,ProblemData
 from itinerary_io import make_poi_itinerary_fields, write_poi_itineraries_to_sink
 
+TRANSFER_TIME = 5   #min
+MAX_TRANSFERS = 2
+MODES = ["pt", "bs", "cs", "walk", "rs"]  # TC, vélo, voiture partagée
 
 
 class BuildItinerariesPOI(QgsProcessingAlgorithm):
@@ -181,22 +184,33 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                 iid += 1
                 
                 #Unimodal mais que si meilleur que TC pur
-                for mode in ["bs", "cs"]:
-                    t = matrix_car[i][j]
-                    if t < t_pt * (1 - min_improvement) and t < t_max:
-                        itineraries.append(Itinerary(
-                            origin=orig, destination=dest,
-                            mode_seq=[mode],
-                            hubs_required=[(orig, mode), (dest, mode)],
-                            travel_time=t, itinerary_id=iid
-                        ))
-                        iid += 1
+                t = matrix_car[i][j] #voiture
+                if t < t_pt * (1 - min_improvement) and t < t_max:
+                    itineraries.append(Itinerary(
+                        origin=orig, destination=dest,
+                        mode_seq=["cs"],
+                        hubs_required=[(orig, "cs"), (dest, "cs")],
+                        travel_time=t, itinerary_id=iid
+                    ))
+                    iid += 1
+                    
+                t = matrix_bike[i][j]#vélo
+                if t < t_pt * (1 - min_improvement) and t < t_max:
+                    itineraries.append(Itinerary(
+                        origin=orig, destination=dest,
+                        mode_seq=["bs"],
+                        hubs_required=[(orig, "bs"), (dest, "bs")],
+                        travel_time=t, itinerary_id=iid
+                    ))
+                    iid += 1
+                        
+                #Construction des itinéraires avec hubs
                 useful_hubs = self.get_useful_hubs(
                     i, j, hubs_src, 
                     matrix_pt, matrix_walk,
                     t_pt, t_max, min_improvement
                 )
-                for hub in useful_hubs:
+                for hub_id in useful_hubs:
                     walk_time = matrix_walk[hub_id][j]
                     t1 = (matrix_pt[i][hub_id] + TRANSFER_TIME
                           + walk_time)
@@ -204,7 +218,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                         itineraries.append(Itinerary(
                             origin=i, destination=j,
                             mode_seq=["pt", "walk"], hubs_required=[],
-                            travel_time=t_1, id=iid
+                            travel_time=t1, id=iid
                         ))
                         iid += 1
                     walk_time = matrix_walk[i][hub_id]
@@ -214,7 +228,28 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                         itineraries.append(Itinerary(
                             origin=i, destination=j,
                             mode_seq=["walk", "pt"], hubs_required=[],
-                            travel_time=t_2, id=iid
+                            travel_time=t2, id=iid
+                        ))
+                        iid += 1
+                    t1 = (matrix_pt[i][hub_id] + TRANSFER_TIME
+                          + matrix_walk[hub_id][j])
+                    if t1 < t_pt * (1 - min_improvement) and t1 < t_max:
+                        itineraries.append(Itinerary(
+                            origin=orig, destination=dest,
+                            mode_seq=["pt", "cs"],
+                            hubs_required=[(hub_id, "cs")],
+                            travel_time=t1, time_car = t_car, itinerary_id=iid
+                        ))
+                        iid += 1
+                    # Mode à demande jusqu'au hub, puis TC
+                    t2 = (matrix_walk[i][hub_id] + TRANSFER_TIME
+                          + matrix_pt[hub_id][j])
+                    if t2 < t_pt * (1 - min_improvement) and t2 < t_max:
+                        itineraries.append(Itinerary(
+                            origin=orig, destination=dest,
+                            mode_seq=["cs", "pt"],
+                            hubs_required=[(hub_id, "cs")],
+                            travel_time=t2,  time_car = t_car,itinerary_id=iid
                         ))
                         iid += 1
                         
