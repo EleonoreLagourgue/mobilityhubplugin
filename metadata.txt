@@ -12,8 +12,8 @@ email=elagourgue@free.fr
 
 about=Ce plugin permet de localiser à l'aide d'un modèle de programmation linéaire mixte en nombres entiers des zones pertinentes pour installer des pôles d'échanges multimodaux. Il a été réalisé sur le département du Lot-et-Garonne avec les données BDTopo, mobpro notammment.Implémente le modèle de decision support pour la localisation de hubs de mobilité multimodale (bike/car sharing) en zone rurale, en maximisant l'accessibilité aux POI ou aux emplois sous contrainte de budget.
 
-tracker=https://github.com/EleonoreLagourgue/plugin_poles_mobilite
-repository=https://github.com/EleonoreLagourgue/plugin_poles_mobilite
+tracker=https://github.com/EleonoreLagourgue/mobilityhubplugin
+repository=https://github.com/EleonoreLagourgue/mobilityhubplugin
 # End of mandatory metadata
 
 # Recommended items:

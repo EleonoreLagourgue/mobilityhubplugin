@@ -69,7 +69,7 @@ class AddGradeAlgorithm(QgsProcessingAlgorithm):
         return "road_network_grades"
  
     def displayName(self):
-        return self.tr("Pente des arêtes d'un graphe routier (MNT)")
+        return self.tr("Ajouter la pente aux arêtes d'un graphe routier (MNT)")
  
     def group(self):
         return self.tr("Réseau")
@@ -206,7 +206,7 @@ class AddGradeAlgorithm(QgsProcessingAlgorithm):
         for fname, ftype in (
             ("elev_start", QVariant.Double),
             ("elev_end", QVariant.Double),
-            ("length_m", QVariant.Double),
+            #("length_m", QVariant.Double),
             ("grade", QVariant.Double),
             ("grade_abs", QVariant.Double),
         ):
@@ -258,7 +258,7 @@ class AddGradeAlgorithm(QgsProcessingAlgorithm):
                         grade_abs = abs(grade)
  
             new_feat.setAttributes(
-                attrs + [elev_start, elev_end, length_m, grade, grade_abs]
+                attrs + [elev_start, elev_end, grade, grade_abs]
             )
             sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
             feedback.setProgress(60 + int(40 * i / total))

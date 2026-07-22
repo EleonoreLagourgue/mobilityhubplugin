@@ -190,16 +190,19 @@ class MatriceTemps(QgsProcessingAlgorithm):
         id_pop = self.parameterAsString(parameters, self.IDPOP, context)
         id_hub = self.parameterAsString(parameters, self.IDHUB, context)
 
-        nom = self.parameterAsString(parameters, self.MODE, context)
-        fichier_sortie=self.parameterAsFileOutput(parameters, self.DESTINATION, context)
+        id_mode = self.parameterAsString(parameters, self.MODE, context)
+        fichier_sortie=self.parameterAsFileOutput(parameters, self.MATRIX, context)
 
         feedback.pushInfo("Construction de la matrice de temps ...")
-        
+        modes = ['Voiture', 'Piéton', 'Vélo','Train']
         
         nodes = qgis_layer_to_gdf(nodes_layer)
         edges = qgis_layer_to_gdf(lignes_layer)
+        nodes = nodes.set_index("osmid")
+        edges = edges.set_index(["u", "v", "key"])
         G = ox.graph_from_gdfs(nodes, edges)
         
+        nom = modes[id_mode]
         node_field = f"node_{nom}"
         nodes_hubs = add_nearest_node(hubs_layer, G, node_field, id_hub)
         nodes_pop  = add_nearest_node(pop_layer, G, node_field, id_pop) #renvoie un dict
@@ -218,7 +221,8 @@ class MatriceTemps(QgsProcessingAlgorithm):
             for fid, node in nodes_dest.items():
                 all_nodes[f"dest_{fid}"] = node
         
-        
+        feedback.pushInfo("Fin formatage  ...")
+
         
         dict_matrix ={}
         index = []
@@ -227,17 +231,20 @@ class MatriceTemps(QgsProcessingAlgorithm):
             src = all_nodes[i]
             lengths = nx.single_source_dijkstra_path_length(
                 G, src, weight=weight)
+            row = {}
             for j in all_nodes:
                 dest = all_nodes[j]
 
-                if dst in lengths:
-                    dict_matrix[str(j)] = lengths[dst]/60 #on passe des secondes aux minutes
+                if dest in lengths:
+                    row[str(j)] = lengths[dest]/60 #on passe des secondes aux minutes
                 else:
-                    dict_matrix[str(j)] = np.inf
-                index.append(str(i))
+                    row[str(j)] = np.inf
+            feedback.pushInfo(f"ligne : {row}")
+            dict_matrix[str(i)] = row 
         matrix = pd.DataFrame(dict_matrix, index = index)
         
         #renvoie un csv/txt
-       
+        feedback.pushInfo(f"matrice : {matrix}")
         matrix.to_csv(fichier_sortie)
+        return {self.MATRIX: fichier_sortie}
             #return origin,dest

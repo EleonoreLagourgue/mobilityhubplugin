@@ -45,8 +45,8 @@ from qgis.core import (
 )
 from qgis.PyQt.QtCore import QVariant
 
-from .optimization_model import ProblemData, Itinerary, solve_poi_model
-from .build_itineraries import itineraires  # cf. section 4 ci-dessous
+from .optimization_model import ProblemData, solve_poi_model
+from .itinerary_io import build_poi_problem_data
 
 
 class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
@@ -86,14 +86,20 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
         nodes_src = self.parameterAsSource(parameters, self.NODES, context)#QgsProcessingFeatureSource
         hubs_src = self.parameterAsSource(parameters, self.HUBS, context)#QgsProcessingFeatureSource
         pois_src = self.parameterAsSource(parameters, self.POIS, context)#QgsProcessingFeatureSource
+        itineraries_src = self.parameterAsSource(parameters, self.ITINERAIRES, context)
         budget = self.parameterAsDouble(parameters, self.BUDGET, context)#float
-        threshold = self.parameterAsDouble(parameters, self.THRESHOLD, context)#float
 
         feedback.pushInfo("Construction des itinéraires potentiels (routage + élimination des dominés)...")
-        # build_potential_itineraries() encapsule : appel au moteur de routage (OSRM/ORS),
-        # génération des combinaisons hub/mode, et l'élimination décrite en section 3.3 de l'article.
-        data: ProblemData = itineraires(
-            nodes_src, hubs_src, pois_src, threshold, budget, feedback
+        
+        #modes : à récupérer selon itineraires.mod_seq unique() 
+        data = build_poi_problem_data(
+            nodes_src, hubs_src, itineraries_src,
+            poi_categories=["pharmacy", "hospital", "supermarket"],
+            travel_time_threshold={"pharmacy": 30, "hospital": 30, "supermarket": 30},
+            modes=["pt", "bs", "cs"],
+            fixed_cost_hub=1000.0,
+            fixed_cost_mode={"bs": 300.0, "cs": 7500.0, "pt": 0.0},
+            budget=budget,
         )
 
         feedback.pushInfo(f"{len(data.itineraries)} itinéraires potentiels générés. Résolution du MIP...")

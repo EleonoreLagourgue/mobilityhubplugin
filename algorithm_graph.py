@@ -87,7 +87,7 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
         options=['Voiture', 'Piéton', 'Vélo','Train'],
         allowMultiple=False,
         defaultValue=0,   # index par défaut (0 = premier élément)
-        optional=False    # <-- rend le paramètre obligatoire
+        optional=False    
             )
         )
         self.addParameter(QgsProcessingParameterFeatureSink(self.LIGNES, self.tr("Couche linéaire du graphe")))
@@ -101,7 +101,7 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
         value_backward = self.parameterAsString(parameters, self.VALUE_BACKWARD, context)
         value_both = self.parameterAsString(parameters, self.VALUE_BOTH, context)
         
-        mode = self.parameterAsString(parameters, self.MODE, context)
+        mode = self.parameterAsInt(parameters, self.MODE, context)
         colonne_vitesse =  self.parameterAsString(parameters, self.SPEED_FIELD, context)
         
         
@@ -119,28 +119,31 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
                 return {}
         
         gdf_route = qgis_layer_to_gdf(layer)
+        feedback.pushInfo(f"mode : {mode}")
+
         feedback.pushInfo("Construction du graphe")
 
      
-        if mode =="Voiture":
+        if mode ==0:
             graph = crea_graphe(gdf_route, colonne_direction, value_forward, value_backward, value_both, mode ="drive")
             feedback.pushInfo("Vérification des doublons")
             graph_snapped = doublon_noeuds(graph, tolerance=tolerance)
+            print(f"Nœuds avant : {graph.number_of_nodes()} | après : {graph_snapped.number_of_nodes()}")
             feedback.pushInfo("Calcul vitesse")
             ponderer_distance_voiture(graph_snapped, colonne_vitesse)
-        elif mode == "Piéton":
+        elif mode == 1:
             graph = crea_graphe(gdf_route, colonne_direction, value_forward, value_backward, value_both, mode ="walk")
             feedback.pushInfo("Vérification des doublons")
             graph_snapped = doublon_noeuds(graph, tolerance=tolerance)
             feedback.pushInfo("Calcul vitesse")
             ponderer_distance_pieton(graph_snapped)
-        elif mode == "Vélo":
+        elif mode == 2:
             graph = crea_graphe(gdf_route, colonne_direction, value_forward, value_backward, value_both, mode ="bike")
             feedback.pushInfo("Vérification des doublons")
             graph_snapped = doublon_noeuds(graph, tolerance=tolerance)
             feedback.pushInfo("Calcul vitesse")
             ponderer_distance_velo(graph_snapped)
-        elif mode == "Train":
+        elif mode == 3:
             graph = crea_graphe(gdf_route, colonne_direction, value_forward, value_backward, value_both, mode ="walk")
             feedback.pushInfo("Vérification des doublons")
             graph_snapped = doublon_noeuds(graph, tolerance=tolerance)

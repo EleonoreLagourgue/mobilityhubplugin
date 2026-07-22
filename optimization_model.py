@@ -161,8 +161,8 @@ def solve_workplace_model(data: WorkplaceProblemData , time_limit_s: int = 300):
     # )
     obj_var = pulp.LpVariable("obj_wp", lowBound=0, upBound=1)
     prob += pulp.lpSum(
-        data.population[node] * a[(node, cat)] for (node, cat) in nodes_pois
-    ) / (total_pop * n_cat)
+        data.population[node] * data.ratio_car
+    ) / total_flux
     prob += obj_var == (
         pulp.lpSum(flux_dict.get((it.origin, it.destination), 0)
         * (travel_matrix_car[node_ids.index(it.origin)]

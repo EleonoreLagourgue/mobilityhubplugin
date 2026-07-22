@@ -405,7 +405,7 @@ def snap_nodes(G, tolerance=1.0):
 
 #%%Fonctions de temps de trajet
 
-def ponderer_distance_pieton(graphe):
+def ponderer_distance_pieton(graphe, colonne_vitesse):
    
     for u, v, data in graphe.edges(data=True):
         nature_a_eviter = ["Bretelle", "Type autoroutier"]
@@ -423,7 +423,7 @@ def ponderer_distance_pieton(graphe):
         data["travel_time"] = length/(vitesse_numerique /3.6) #en secondes
         #On exclut les autoroutes et autres routes
         #non empruntables à pied
-        if data.get("nature") in nature_a_eviter or data.get("vitesse_moyenne_vl",0) > 60 or (data.get("cpx_classement_administratif") in classement and data.get("urbain") == "false" ):
+        if data.get("nature") in nature_a_eviter or data.get(colonne_vitesse,0) > 60 or (data.get("cpx_classement_administratif") in classement and data.get("urbain") == "false" ):
             vitesse_numerique = 0
             data["travel_time"] = float("inf")
         data["speed_kph"] = vitesse_numerique
