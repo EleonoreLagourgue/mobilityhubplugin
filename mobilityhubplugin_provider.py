@@ -34,9 +34,12 @@ from qgis.core import QgsProcessingProvider
 from .crea_shapes import CreaShapesAlgorithm
 from .algorithm_poi import LocateHubsPOIAlgorithm
 from .algorithm_workplace import LocateHubsWorkplaceAlgorithm
-from .crea_graphe  import BuildGraphAlgorithm
+from .algorithm_graph  import BuildGraphAlgorithm
 from .algorithm_matricetemps  import MatriceTemps
-from .algorithm_itineraires  import BuildItineraries
+from .algorithm_itineraires  import BuildItinerariesWP
+from .algorithm_itineraires_poi import BuildItinerariesPOI
+from .algorithm_pente import AddGradeAlgorithm
+
 
 
 class MobilityHubPluginProvider(QgsProcessingProvider):
@@ -63,7 +66,10 @@ class MobilityHubPluginProvider(QgsProcessingProvider):
         self.addAlgorithm(LocateHubsWorkplaceAlgorithm())
         self.addAlgorithm(BuildGraphAlgorithm())
         self.addAlgorithm(MatriceTemps())
-        self.addAlgorithm(BuildItineraries())
+        self.addAlgorithm(BuildItinerariesWP())
+        self.addAlgorithm(BuildItinerariesPOI())
+        self.addAlgorithm(AddGradeAlgorithm())
+
 
         
         # add additional algorithms here
