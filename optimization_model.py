@@ -3,7 +3,7 @@ Implémentation du modèle d'optimisation "accessibilité aux POI"
 (Frank, Dirks & Walther, 2021 - Section 3.2.2, équations 1-12).
 
 Les données d'entrée (nœuds, hubs candidats, itinéraires potentiels,
-temps de trajet, seuils) doivent être préparées en amont (cf. build_itineraries.py)
+temps de trajet, seuils) doivent être préparées en amont (cf. algo_itineraires.py)
 à partir des couches QGIS, puis passées ici sous forme de structures Python simples.
 Le solveur ne dépend pas de QGIS : il peut donc être testé indépendamment.
 """

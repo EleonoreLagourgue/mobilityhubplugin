@@ -31,14 +31,15 @@ __copyright__ = '(C) 2026 by Eleonore Lagourgue'
 __revision__ = '$Format:%H$'
 
 from qgis.core import QgsProcessingProvider
-from .crea_shapes import CreaShapesAlgorithm
-from .algorithm_poi import LocateHubsPOIAlgorithm
-from .algorithm_workplace import LocateHubsWorkplaceAlgorithm
-from .algorithm_graph  import BuildGraphAlgorithm
-from .algorithm_matricetemps  import MatriceTemps
-from .algorithm_itineraires  import BuildItinerariesWP
-from .algorithm_itineraires_poi import BuildItinerariesPOI
-from .algorithm_pente import AddGradeAlgorithm
+from .algo_shapes import CreaShapesAlgorithm
+from .algo_poi import LocateHubsPOIAlgorithm
+from .algo_workplace import LocateHubsWorkplaceAlgorithm
+from .algo_graph  import BuildGraphAlgorithm
+from .algo_matricetemps  import MatriceTemps
+from .algo_itineraires_wp  import BuildItinerariesWP
+from .algo_itineraires_poi import BuildItinerariesPOI
+from .algo_pente import AddGradeAlgorithm
+from.algo_od import FormateODmatrix
 
 
 
@@ -69,6 +70,7 @@ class MobilityHubPluginProvider(QgsProcessingProvider):
         self.addAlgorithm(BuildItinerariesWP())
         self.addAlgorithm(BuildItinerariesPOI())
         self.addAlgorithm(AddGradeAlgorithm())
+        self.addAlgorithm(FormateODmatrix())
 
 
         
