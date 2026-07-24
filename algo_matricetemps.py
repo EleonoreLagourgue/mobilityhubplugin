@@ -39,28 +39,62 @@ import osmnx as ox
 import networkx as nx
 import pandas as pd
 import numpy as np
+
 def nearest_node(G, lat, lon):
     return ox.nearest_nodes(G, lon, lat)
-def add_nearest_node(layer, G, field_name, colonne_id):
-    nom_champs=[]
-    layer.startEditing()
-    for i in layer.fields():
-        nom_champs.append(i.name())
+
+def add_nearest_node(layer, G, field_name, colonne_id,feedback=None):
+    nom_champs = [f.name() for f in layer.fields()]
+
+    if not layer.isEditable():
+        layer.startEditing()
+
+    
     if (field_name not in nom_champs):
         layer.dataProvider().addAttributes([QgsField(field_name,QVariant.Int)])
     
     layer.updateFields()
     idx = layer.fields().indexFromName(field_name)
-    values = {}
-    for feat in layer.getFeatures():
+    
+    feats = list(layer.getFeatures())
+    if not feats:
+        layer.commitChanges()
+        return {}
+
+        
+        
+    ids = []
+    xs = []  # longitude
+    ys = []  # latitude
+    seen_ids = set()
+    for feat in feats:
         code = feat[colonne_id]
-        geom = feat.geometry().asPoint()
-        node = nearest_node(G, geom.x(), geom.y())
+        if code in seen_ids and feedback:
+            feedback.pushWarning(
+                f"Identifiant '{code}' dupliqué dans la colonne '{colonne_id}' "
+                f"de la couche '{layer.name()}' : les doublons s'écraseront."
+            )
+        seen_ids.add(code)
+        pt = feat.geometry().asPoint()
+        ids.append(code)
+        xs.append(pt.x())  # X = longitude
+        ys.append(pt.y())  # Y = latitude
+ 
+    # Un seul appel vectorisé : X = longitudes, Y = latitudes (ordre correct)
+    nearest = ox.nearest_nodes(G, X=xs, Y=ys)
+    if np.isscalar(nearest):
+        nearest = [nearest]
+ 
+    values = {}
+    for feat, code, node in zip(feats, ids, nearest):
         values[code] = node
-        layer.changeAttributeValue(feat.id(), idx, values[code])
-        
-        
-    layer.commitChanges()
+        layer.changeAttributeValue(feat.id(), idx, int(node))
+ 
+    ok = layer.commitChanges()
+    if not ok and feedback:
+        feedback.pushWarning(
+            f"Impossible d'enregistrer les modifications sur la couche '{layer.name()}'."
+        )
     return values
 
 
@@ -204,8 +238,8 @@ class MatriceTemps(QgsProcessingAlgorithm):
         
         nom = modes[id_mode]
         node_field = f"node_{nom}"
-        nodes_hubs = add_nearest_node(hubs_layer, G, node_field, id_hub)
-        nodes_pop  = add_nearest_node(pop_layer, G, node_field, id_pop) #renvoie un dict
+        nodes_hubs = add_nearest_node(hubs_layer, G, node_field, id_hub, feedback=feedback)
+        nodes_pop  = add_nearest_node(pop_layer, G, node_field, id_pop, feedback=feedback) #renvoie un dict
         
         all_nodes = {} #dictionnaire
         for fid, node in nodes_hubs.items():
@@ -217,7 +251,7 @@ class MatriceTemps(QgsProcessingAlgorithm):
         if dest_layer is not None:
             id_dest = self.parameterAsString(parameters, self.IDDEST, context)
             
-            nodes_dest = add_nearest_node(dest_layer, G, node_field, id_dest)
+            nodes_dest = add_nearest_node(dest_layer, G, node_field, id_dest, feedback=feedback)
             for fid, node in nodes_dest.items():
                 all_nodes[f"dest_{fid}"] = node
         
