@@ -142,6 +142,10 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         matrix_w_path = self.parameterAsFile(parameters, self.MATRIXWALK, context)
         max_ratio_vs_car = self.parameterAsDouble(parameters, self.MAXRATIO, context)
         min_improvement=self.parameterAsDouble(parameters, self.MINIMPRO, context)
+        
+        id_nodes = self.parameterAsString(parameters, self.IDPOP,context)
+        id_hubs = self.parameterAsString(parameters, self.IDHUBS,context)
+
 
 
         feedback.pushInfo("Construction des itinéraires potentiels (routage + élimination des dominés)...")
@@ -151,7 +155,12 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         matrix_walk = pd.read_csv(matrix_w_path)
         
         nodes_gdf = qgis_layer_to_gdf(nodes_layer)
-        hubss_gdf = qgis_layer_to_gdf(hubs_layer)
+        hubs_gdf = qgis_layer_to_gdf(hubs_layer)
+        nodes_gdf[id_nodes] = f"pop_{nodes_gdf[id_nodes]}"
+        nodes_gdf = nodes_gdf.set_index(id_nodes)
+        hubs_gdf[id_hubs] = f"hub_{hubs_gdf[id_hubs]}"
+        hubs_gdf = hubs_gdf.set_index(id_hubs)
+
 
         itineraries = []
         iid = 0 #compteur pour créer l'id de chaque itinéraire
