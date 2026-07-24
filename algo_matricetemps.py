@@ -100,6 +100,7 @@ def add_nearest_node(layer, G, field_name, colonne_id,feedback=None):
 
 
 def lat_lon(layer):
+    #A supprimer ?
     nom_champs=[]
     layer.startEditing()
     for i in layer.fields():
@@ -112,6 +113,53 @@ def lat_lon(layer):
     layer.updateFields()
     layer.commitChanges()
     return layer
+
+def build_time_matrix(G, all_nodes, weight, feedback=None):
+    """
+    Calcule la matrice temps (en minutes) entre tous les nœuds de all_nodes,
+    en une seule passe via scipy (Dijkstra multi-source, code compilé),
+    au lieu d'un Dijkstra networkx par nœud source.
+ 
+    all_nodes : dict {label: osmid}
+    """
+    if feedback:
+        feedback.pushInfo("Conversion du MultiDiGraph en DiGraph (poids minimal conservé)...")
+    # Un graphe osmnx est un MultiDiGraph : il peut y avoir plusieurs arêtes
+    # entre deux mêmes nœuds. On ne garde que l'arête de poids minimal pour
+    # que la matrice creuse représente correctement le plus court chemin.
+    DG = ox.convert.to_digraph(G, weight=weight)
+ 
+    node_list = list(DG.nodes())
+    node_index = {n: i for i, n in enumerate(node_list)}
+ 
+    if feedback:
+        feedback.pushInfo("Construction de la matrice creuse du réseau...")
+    A = nx.to_scipy_sparse_array(DG, nodelist=node_list, weight=weight, format="csr")
+ 
+    labels = list(all_nodes.keys())
+    osmids = [all_nodes[k] for k in labels]
+ 
+    missing = [lbl for lbl, n in zip(labels, osmids) if n not in node_index]
+    if missing:
+        raise ValueError(
+            f"Nœuds absents du graphe après conversion : {missing[:10]}"
+            + (" ..." if len(missing) > 10 else "")
+        )
+ 
+    indices = [node_index[n] for n in osmids]
+ 
+    if feedback:
+        feedback.pushInfo(f"Calcul de {len(indices)} plus courts chemins (Dijkstra vectorisé)...")
+ 
+    # Une seule passe pour toutes les sources -> matrice (n_sources, n_total_nodes)
+    dist_matrix = scipy_dijkstra(csgraph=A, directed=True, indices=indices)
+ 
+    # On ne garde que les colonnes correspondant aux nœuds d'intérêt
+    sub = dist_matrix[:, indices] / 60.0  # secondes -> minutes
+ 
+    matrix = pd.DataFrame(sub, index=labels, columns=labels)
+    return matrix
+
 
 class MatriceTemps(QgsProcessingAlgorithm):
     """
@@ -237,9 +285,20 @@ class MatriceTemps(QgsProcessingAlgorithm):
         G = ox.graph_from_gdfs(nodes, edges)
         
         nom = modes[id_mode]
+        feedback.pushInfo(nom)
+
         node_field = f"node_{nom}"
+        
+        feedback.pushInfo("Recherche des nœuds les plus proches (hubs)...")
         nodes_hubs = add_nearest_node(hubs_layer, G, node_field, id_hub, feedback=feedback)
+        if feedback.isCanceled():
+            return {}
+ 
+        feedback.pushInfo("Recherche des nœuds les plus proches (population)...")
         nodes_pop  = add_nearest_node(pop_layer, G, node_field, id_pop, feedback=feedback) #renvoie un dict
+        if feedback.isCanceled():
+            return {}
+
         
         all_nodes = {} #dictionnaire
         for fid, node in nodes_hubs.items():
@@ -250,35 +309,44 @@ class MatriceTemps(QgsProcessingAlgorithm):
         #Si destination différente de pop (pour les POIs)
         if dest_layer is not None:
             id_dest = self.parameterAsString(parameters, self.IDDEST, context)
-            
+            feedback.pushInfo("Recherche des nœuds les plus proches (destinations)...")
             nodes_dest = add_nearest_node(dest_layer, G, node_field, id_dest, feedback=feedback)
             for fid, node in nodes_dest.items():
                 all_nodes[f"dest_{fid}"] = node
         
         feedback.pushInfo("Fin formatage  ...")
+        feedback.pushInfo(f"{len(all_nodes)} points à traiter. Calcul de la matrice de temps...")
+        if feedback.isCanceled():
+            return {}
 
-        
-        dict_matrix ={}
-        index = []
-        for i in all_nodes:
-            #Dijkstra depuis src vers tous les autres noeuds
-            src = all_nodes[i]
-            lengths = nx.single_source_dijkstra_path_length(
-                G, src, weight=weight)
-            row = {}
-            for j in all_nodes:
-                dest = all_nodes[j]
+        matrix = build_time_matrix(G, all_nodes, weight, feedback)
 
-                if dest in lengths:
-                    row[str(j)] = lengths[dest]/60 #on passe des secondes aux minutes
-                else:
-                    row[str(j)] = np.inf
-            feedback.pushInfo(f"ligne : {row}")
-            dict_matrix[str(i)] = row 
-        matrix = pd.DataFrame(dict_matrix, index = index)
-        
-        #renvoie un csv/txt
-        feedback.pushInfo(f"matrice : {matrix}")
+        feedback.pushInfo(f"Écriture du fichier de sortie : {fichier_sortie}")
         matrix.to_csv(fichier_sortie)
         return {self.MATRIX: fichier_sortie}
-            #return origin,dest
+
+        
+        # dict_matrix ={}
+        # index = []
+        # for i in all_nodes:
+        #     #Dijkstra depuis src vers tous les autres noeuds
+        #     src = all_nodes[i]
+        #     lengths = nx.single_source_dijkstra_path_length(
+        #         G, src, weight=weight)
+        #     row = {}
+        #     for j in all_nodes:
+        #         dest = all_nodes[j]
+
+        #         if dest in lengths:
+        #             row[str(j)] = lengths[dest]/60 #on passe des secondes aux minutes
+        #         else:
+        #             row[str(j)] = np.inf
+        #     #feedback.pushInfo(f"ligne : {row}")
+        #     dict_matrix[str(i)] = row 
+        # matrix = pd.DataFrame(dict_matrix, index = index)
+        
+        # #renvoie un csv/txt
+        # feedback.pushInfo(f"matrice : {matrix}")
+        # matrix.to_csv(fichier_sortie)
+        # return {self.MATRIX: fichier_sortie}
+        #     #return origin,dest
