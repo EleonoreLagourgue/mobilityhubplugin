@@ -59,7 +59,7 @@ from collections import defaultdict
 
 
 from .optimization_model import WorkplaceProblemData, WorkplaceItinerary
-from mobilityhubplugin.conversions import make_wp_itinerary_fields, write_wp_itineraries_to_sink
+from mobilityhubplugin.conversions import make_wp_itinerary_fields, write_wp_itineraries_to_sink,qgis_layer_to_gdf
 
 
 
@@ -73,8 +73,6 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
     IDPOP = "IDPOP"
     HUBS = "HUBS"
     IDHUB = "IDHUB"
-    DESTINATION = "DESTINATION"
-    IDDEST ="IDDEST"
     MATRIXPT = "MATRIXPT"
     MATRIXCAR ="MATRIXCAR"
     MATRIXBIKE = "MATRIXBIKE"
@@ -111,15 +109,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                                                       "Colonne id pour la couche des hubs",
                                                       parentLayerParameterName=self.HUBS))
         
-        self.addParameter(QgsProcessingParameterFeatureSource(self.DESTINATION,
-                                                              "Destinations (si différent de nœuds de population) ",
-                                                              [QgsProcessing.SourceType.TypeVectorPoint],
-                                                              optional = True))
-                                                      
-        self.addParameter(QgsProcessingParameterField(self.IDDEST, 
-                                              "Colonne id pour la couche de destination",
-                                              parentLayerParameterName=self.DESTINATION,
-                                              optional = True))
+        
         self.addParameter(QgsProcessingParameterFile(self.MATRIXPT, 
                                                               "Matrice de temps transportS en commun",
                                                               extension = "csv"))
@@ -144,9 +134,8 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         
         
     def processAlgorithm(self, parameters, context, feedback):
-        nodes_src = self.parameterAsSource(parameters, self.POP, context)#QgsProcessingFeatureSource
-        hubs_src = self.parameterAsSource(parameters, self.HUBS, context)#QgsProcessingFeatureSource
-        dest_src = self.parameterAsSource(parameters, self.DESTINATION, context)#QgsProcessingFeatureSource
+        nodes_layer = self.parameterAsVectorLayer(parameters, self.POP, context)#QgsProcessingFeatureSource
+        hubs_layer = self.parameterAsVectorLayer(parameters, self.HUBS, context)#QgsProcessingFeatureSource
         matrix_pt_path = self.parameterAsFile(parameters, self.MATRIXPT, context)
         matrix_b_path = self.parameterAsFile(parameters, self.MATRIXBIKE, context)
         matrix_car_path = self.parameterAsFile(parameters, self.MATRIXCAR, context)
@@ -160,13 +149,16 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         matrix_bike = pd.read_csv(matrix_b_path)
         matrix_car = pd.read_csv(matrix_car_path)
         matrix_walk = pd.read_csv(matrix_w_path)
+        
+        nodes_gdf = qgis_layer_to_gdf(nodes_layer)
+        hubss_gdf = qgis_layer_to_gdf(hubs_layer)
 
         itineraries = []
         iid = 0 #compteur pour créer l'id de chaque itinéraire
         
-        for i, orig in nodes_src.items():
-            for j, dest in dest_src.items():
-                if orig == dest:
+        for i, orig in nodes_gdf.items():
+            for j, dest in nodes_gdf.items():
+                if orig.equals( dest):
                     continue
 
                 t_car = matrix_car.loc[i, j] #temps en voiture
@@ -214,7 +206,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                 
                 #Pied+TC
                 useful_hubs = self.get_useful_hubs(
-                    i, j, hubs_src, 
+                    i, j, hubss_gdf, 
                     matrix_pt, matrix_walk,
                     t_pt, t_max, min_improvement
                 )
@@ -242,7 +234,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                 
                 #CS + TC
                 useful_hubs = self.get_useful_hubs(
-                        i, j, hubs_src, 
+                        i, j, hubss_gdf, 
                         matrix_pt, matrix_car,
                         t_pt, t_max, min_improvement
                     )
@@ -270,7 +262,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                         iid += 1
                 #BS + TC
                 useful_hubs = self.get_useful_hubs(
-                        i, j, hubs_src, 
+                        i, j, hubss_gdf, 
                         matrix_pt, matrix_bike,
                         t_pt, t_max, min_improvement
                     )
@@ -310,41 +302,8 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
 
         write_wp_itineraries_to_sink(iti_finaux, sink)
         return {self.OUTPUT: dest_id}
-    def itineraries(origin, hubs,matrix_pt, matrix_car, matrix_bike, 
-                    matrix_walk, dest = None, max_ratio_vs_car=3.0,
-                    min_improvement=0.10):
-        itineraries = []
-        iid = 0 #compteur pour créer l'id de chaque itinéraire
+    
         
-        for i, orig in origin.items():
-            for j, dest in origin.items():
-                if orig == dest:
-                    continue
-
-                t_car = matrix_car.loc[i, j] #temps en voiture
-                t_pt  = matrix_pt.loc[i, j] #temps de comparaison
-                if t_car == np.inf or t_pt == np.inf:
-                    continue
-                t_max = min(t_pt, max_ratio_vs_car * t_car)
-                
-                #On ajoute toujours le temps en TC
-                itineraries.append(Itinerary(
-                    origin=i, destination=j,
-                    mode_seq=["pt"], hubs_required=[],
-                    travel_time=t_pt, itinerary_id=iid
-                ))
-                iid += 1
-                
-        WorkplaceProblemData(
-            commuting_volume=commuting_volume,
-            hub_locations=[f["id"] for f in hubs_src.getFeatures()],
-            modes=list(modes),
-            itineraries=itineraries,
-            fixed_cost_hub=1000.0,          # cf. Table 2 (c^F)
-            fixed_cost_mode={"bs": 300.0, "cs": 7500.0},  # cf. Table 2
-            budget=budget,
-        )
-        pass
     def get_useful_hubs(i, j, hubs_potentiels, 
                         mat_pt, mat_car, t_pt, t_max, min_improvement):
         """
