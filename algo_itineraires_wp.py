@@ -111,7 +111,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         
         
         self.addParameter(QgsProcessingParameterFile(self.MATRIXPT, 
-                                                              "Matrice de temps transportS en commun",
+                                                              "Matrice de temps transports en commun",
                                                               extension = "csv"))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXCAR, 
                                                               "Matrice de temps voiture",
@@ -144,7 +144,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         min_improvement=self.parameterAsDouble(parameters, self.MINIMPRO, context)
         
         id_nodes = self.parameterAsString(parameters, self.IDPOP,context)
-        id_hubs = self.parameterAsString(parameters, self.IDHUBS,context)
+        id_hubs = self.parameterAsString(parameters, self.IDHUB,context)
 
 
 
@@ -153,7 +153,8 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         matrix_bike = pd.read_csv(matrix_b_path)
         matrix_car = pd.read_csv(matrix_car_path)
         matrix_walk = pd.read_csv(matrix_w_path)
-        
+        feedback.pushInfo(f"{len(matrix_walk)} : taille matrice marche")
+
         nodes_gdf = qgis_layer_to_gdf(nodes_layer)
         hubs_gdf = qgis_layer_to_gdf(hubs_layer)
         nodes_gdf[id_nodes] = f"pop_{nodes_gdf[id_nodes]}"
@@ -166,7 +167,11 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         iid = 0 #compteur pour créer l'id de chaque itinéraire
         
         for i, orig in nodes_gdf.items():
+            feedback.pushInfo(i)
+
             for j, dest in nodes_gdf.items():
+                feedback.pushInfo(j)
+
                 if orig.equals( dest):
                     continue
 
@@ -215,7 +220,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                 
                 #Pied+TC
                 useful_hubs = self.get_useful_hubs(
-                    i, j, hubss_gdf, 
+                    i, j, hubs_gdf, 
                     matrix_pt, matrix_walk,
                     t_pt, t_max, min_improvement
                 )
@@ -243,7 +248,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                 
                 #CS + TC
                 useful_hubs = self.get_useful_hubs(
-                        i, j, hubss_gdf, 
+                        i, j, hubs_gdf, 
                         matrix_pt, matrix_car,
                         t_pt, t_max, min_improvement
                     )
@@ -271,7 +276,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                         iid += 1
                 #BS + TC
                 useful_hubs = self.get_useful_hubs(
-                        i, j, hubss_gdf, 
+                        i, j, hubs_gdf, 
                         matrix_pt, matrix_bike,
                         t_pt, t_max, min_improvement
                     )
