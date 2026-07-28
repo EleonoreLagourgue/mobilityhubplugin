@@ -166,13 +166,15 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         itineraries = []
         iid = 0 #compteur pour créer l'id de chaque itinéraire
         
-        for i, orig in nodes_gdf.items():
+        for row_a in nodes_gdf.itertuples():
+            i = row_a[0]
             feedback.pushInfo(i)
 
-            for j, dest in nodes_gdf.items():
+            for row_b in nodes_gdf.itertuples():
+                j = row_b[0]
                 feedback.pushInfo(j)
 
-                if orig.equals( dest):
+                if row_a== row_b:
                     continue
 
                 t_car = matrix_car.loc[i, j] #temps en voiture
