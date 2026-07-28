@@ -157,9 +157,9 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
 
         nodes_gdf = qgis_layer_to_gdf(nodes_layer)
         hubs_gdf = qgis_layer_to_gdf(hubs_layer)
-        nodes_gdf[id_nodes] = f"pop_{nodes_gdf[id_nodes]}"
+        nodes_gdf[id_nodes] = "pop_" + nodes_gdf[id_nodes].astype(str)
         nodes_gdf = nodes_gdf.set_index(id_nodes)
-        hubs_gdf[id_hubs] = f"hub_{hubs_gdf[id_hubs]}"
+        hubs_gdf[id_hubs] = "hub_" + nodes_gdf[id_nodes].astype(str)
         hubs_gdf = hubs_gdf.set_index(id_hubs)
 
 
@@ -168,13 +168,14 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         
         for row_a in nodes_gdf.itertuples():
             i = row_a[0]
-            feedback.pushInfo(i)
+            feedback.pushInfo(f"ID origine :{i}")
 
             for row_b in nodes_gdf.itertuples():
                 j = row_b[0]
-                feedback.pushInfo(j)
+                feedback.pushInfo(f"ID destination :{j}")
 
-                if row_a== row_b:
+                if i== j:
+                    feedback.pushInfo(f"Mêmes rows : {row_a}, {row_b}")
                     continue
 
                 t_car = matrix_car.loc[i, j] #temps en voiture
@@ -192,16 +193,16 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                     travel_time=t_pt, id=iid
                 ))
                 iid += 1
-                
+                feedback.pushInfo(f"Ajout TC :{iid}")
                 # =====================================================
                 #          Unimodal mais que si meilleur que TC pur
                 # =====================================================
                 t = matrix_car[i][j] #voiture
                 if t < t_pt * (1 - min_improvement) and t < t_max:
                     itineraries.append(WorkplaceItinerary(
-                        origin=orig, destination=dest,
+                        origin=i, destination=j,
                         mode_seq=["cs"],
-                        hubs_required=[(orig, "cs"), (dest, "cs")],
+                        hubs_required=[(i, "cs"), (j, "cs")],
                         travel_time=t, itinerary_id=iid
                     ))
                     iid += 1
@@ -209,9 +210,9 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                 t = matrix_bike[i][j]#vélo
                 if t < t_pt * (1 - min_improvement) and t < t_max:
                     itineraries.append(WorkplaceItinerary(
-                        origin=orig, destination=dest,
+                        origin=i, destination=j,
                         mode_seq=["bs"],
-                        hubs_required=[(orig, "bs"), (dest, "bs")],
+                        hubs_required=[(i, "bs"), (j, "bs")],
                         travel_time=t, itinerary_id=iid
                     ))
                     iid += 1
@@ -259,7 +260,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                           + matrix_car[hub_id][j])
                     if t1 < t_pt * (1 - min_improvement) and t1 < t_max:
                         itineraries.append(WorkplaceItinerary(
-                            origin=orig, destination=dest,
+                            origin=i, destination=j,
                             mode_seq=["pt", "cs"],
                             hubs_required=[(hub_id, "cs")],
                             travel_time=t1, time_car = t_car, itinerary_id=iid
@@ -270,7 +271,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                           + matrix_pt[hub_id][j])
                     if t2 < t_pt * (1 - min_improvement) and t2 < t_max:
                         itineraries.append(WorkplaceItinerary(
-                            origin=orig, destination=dest,
+                            origin=i, destination=j,
                             mode_seq=["cs", "pt"],
                             hubs_required=[(hub_id, "cs")],
                             travel_time=t2,  time_car = t_car,itinerary_id=iid
@@ -287,7 +288,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                           + matrix_bike[hub_id][j])
                     if t1 < t_pt * (1 - min_improvement) and t1 < t_max:
                         itineraries.append(WorkplaceItinerary(
-                            origin=orig, destination=dest,
+                            origin=i, destination=j,
                             mode_seq=["pt", "cs"],
                             hubs_required=[(hub_id, "cs")],
                             travel_time=t1, time_car = t_car, itinerary_id=iid
@@ -298,7 +299,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                           + matrix_pt[hub_id][j])
                     if t2 < t_pt * (1 - min_improvement) and t2 < t_max:
                         itineraries.append(WorkplaceItinerary(
-                            origin=orig, destination=dest,
+                            origin=i, destination=j,
                             mode_seq=["cs", "pt"],
                             hubs_required=[(hub_id, "cs")],
                             travel_time=t2,  time_car = t_car,itinerary_id=iid
