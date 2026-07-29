@@ -86,6 +86,7 @@ def sens_circulation (route, colonne_sens, direct, inverse, double, autre):
     elif "geom" in route.columns:
         geom = "geom"
         
+        
     if colonne_sens:
         print(colonne_sens)
         if direct:
@@ -150,6 +151,20 @@ def sens_circulation_velo(route, colonne_sens, direct, inverse, double, autre,
                           sens_velo_direct = None,
                           sens_velo_inverse = None,
                           double_sens_velo =None):
+    columns = route.columns
+    if "geom"  in columns:
+        geometry= "geom"
+    else:
+        geometry = "geometry"
+    
+    empty = route.iloc[0:0].copy()  #DataFrame vide avec les mêmes colonnes
+    sens_direct = empty
+    sens_inverse = empty
+    double_uv_so = empty
+    double_vu_so = empty
+    sens_direct_velo = empty
+    sens_inverse_velo = empty
+
     if direct:
         #On vérifie que la chaîne de caractères n'est pas vide
         sens_direct  = route[route[colonne_sens] == direct].copy()
@@ -158,7 +173,7 @@ def sens_circulation_velo(route, colonne_sens, direct, inverse, double, autre,
         #Sens inverse : on échange u et v + on inverse la géométrie
         sens_inverse = route[route[colonne_sens] == inverse].copy()
         sens_inverse[["u", "v"]] = sens_inverse[["v", "u"]].values
-        sens_inverse["geom"] = sens_inverse["geom"].apply(
+        sens_inverse[geometry] = sens_inverse[geometry].apply(
             lambda g: LineString(list(g.coords)[::-1])
         )
 
@@ -166,25 +181,26 @@ def sens_circulation_velo(route, colonne_sens, direct, inverse, double, autre,
     double_uv = route.copy()
     double_vu  = double_uv.copy()
     double_vu[["u", "v"]] = double_vu[["v", "u"]].values
-    double_vu["geometry"] = double_vu["geometry"].apply(
+    double_vu[geometry] = double_vu[geometry].apply(
         lambda g: LineString(list(g.coords)[::-1])
     )
-    #Idem pour sans objet
-    double_uv_so = route[route[colonne_sens].isin(autre)].copy()
-    double_vu_so  = double_uv_so.copy()
-    double_vu_so[["u", "v"]] = double_vu_so[["v", "u"]].values
-    double_vu_so["geom"] = double_vu_so["geom"].apply(
-        lambda g: LineString(list(g.coords)[::-1])
-    )
+    if autre:
+        #Idem pour sans objet
+        double_uv_so = route[route[colonne_sens].isin(autre)].copy()
+        double_vu_so  = double_uv_so.copy()
+        double_vu_so[["u", "v"]] = double_vu_so[["v", "u"]].values
+        double_vu_so[geometry] = double_vu_so[geometry].apply(
+            lambda g: LineString(list(g.coords)[::-1])
+        )
     if sens_velo_direct:
         #On vérifie que la chaîne de caractères n'est pas vide
-        sens_direct  = route[route[colonne_sens] == sens_velo_direct].copy()
+        sens_direct_velo  = route[route[colonne_sens] == sens_velo_direct].copy()
     if sens_velo_inverse:
         #Idem que pour direct
         #Sens inverse : on échange u et v + on inverse la géométrie
-        sens_inverse = route[route[colonne_sens] == sens_velo_inverse].copy()
-        sens_inverse[["u", "v"]] = sens_inverse[["v", "u"]].values
-        sens_inverse["geom"] = sens_inverse["geom"].apply(
+        sens_inverse_velo = route[route[colonne_sens] == sens_velo_inverse].copy()
+        sens_inverse_velo[["u", "v"]] = sens_inverse_velo[["v", "u"]].values
+        sens_inverse_velo[geometry] = sens_inverse_velo[geometry].apply(
             lambda g: LineString(list(g.coords)[::-1])
         )
     #Concaténation
@@ -194,7 +210,7 @@ def sens_circulation_velo(route, colonne_sens, direct, inverse, double, autre,
     )
 
 
-    route_orientee = route_orientee.drop_duplicates(subset=["u", "v", "geometry"])
+    route_orientee = route_orientee.drop_duplicates(subset=["u", "v", geometry])
 
 
     #Recalcul de key pour éviter les doublons (u, v, key)
@@ -203,7 +219,7 @@ def sens_circulation_velo(route, colonne_sens, direct, inverse, double, autre,
     #Réindexation finale
     route_orientee = route_orientee.set_index(["u", "v", "key"])
     return route_orientee
-    pass
+    
 
 def table_noeuds(route):
     route_temp = route.reset_index()

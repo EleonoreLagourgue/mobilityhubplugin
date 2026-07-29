@@ -17,7 +17,8 @@ class Itinerary:
     node: str            # population node i
     poi_category: str    # POI category p
     travel_time: float    # t_s
-    hub_requirements: list  # [(hub_location, mode), ...]
+    mode_eq : str
+    hubs_required: list  # [(hub_location, mode), ...]
     parking_demand: dict  # {(hub_location, mode): delta_lms}
 
 
@@ -40,8 +41,9 @@ class WorkplaceItinerary:
     origin: str            # population node i
     destination: str        # population node j
     travel_time: float       # t_s (temps du trajet public/intermodal)
-    ratio_car: float          # r_s = temps voiture / temps de ce trajet (eq. 13)
-    hub_requirements: list    # [(hub_location, mode), ...]
+    ratio_car: float         # r_s = temps voiture / temps de ce trajet (eq. 13)
+    mode_seq : str
+    hubs_required: list    # [(hub_location, mode), ...]
     parking_demand: dict      # {(hub_location, mode): delta_lms}
 
 @dataclass

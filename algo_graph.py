@@ -100,6 +100,7 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
         value_forward = self.parameterAsString(parameters, self.VALUE_FORWARD, context)
         value_backward = self.parameterAsString(parameters, self.VALUE_BACKWARD, context)
         value_both = self.parameterAsString(parameters, self.VALUE_BOTH, context)
+        default_direction = self.parameterAsString(parameters, self.DEFAULT_DIRECTION, context)
         
         mode = self.parameterAsInt(parameters, self.MODE, context)
         colonne_vitesse =  self.parameterAsString(parameters, self.SPEED_FIELD, context)
@@ -136,7 +137,7 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
             feedback.pushInfo("Vérification des doublons")
             graph_snapped = doublon_noeuds(graph, tolerance=tolerance)
             feedback.pushInfo("Calcul vitesse")
-            ponderer_distance_pieton(graph_snapped)
+            ponderer_distance_pieton(graph_snapped, colonne_vitesse)
         elif mode == 2:
             graph = crea_graphe(gdf_route, colonne_direction, value_forward, value_backward, value_both, mode ="bike")
             feedback.pushInfo("Vérification des doublons")

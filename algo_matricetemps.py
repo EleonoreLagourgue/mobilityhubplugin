@@ -39,6 +39,8 @@ import osmnx as ox
 import networkx as nx
 import pandas as pd
 import numpy as np
+from scipy.sparse.csgraph import dijkstra as scipy_dijkstra
+
 
 def nearest_node(G, lat, lon):
     return ox.nearest_nodes(G, lon, lat)
@@ -288,7 +290,8 @@ class MatriceTemps(QgsProcessingAlgorithm):
         feedback.pushInfo(nom)
 
         node_field = f"node_{nom}"
-        
+        feedback.pushInfo(node_field)
+
         feedback.pushInfo("Recherche des nœuds les plus proches (hubs)...")
         nodes_hubs = add_nearest_node(hubs_layer, G, node_field, id_hub, feedback=feedback)
         if feedback.isCanceled():
@@ -299,7 +302,7 @@ class MatriceTemps(QgsProcessingAlgorithm):
         if feedback.isCanceled():
             return {}
 
-        
+
         all_nodes = {} #dictionnaire
         for fid, node in nodes_hubs.items():
             all_nodes[f"hub_{fid}"] = node
@@ -311,6 +314,7 @@ class MatriceTemps(QgsProcessingAlgorithm):
             id_dest = self.parameterAsString(parameters, self.IDDEST, context)
             feedback.pushInfo("Recherche des nœuds les plus proches (destinations)...")
             nodes_dest = add_nearest_node(dest_layer, G, node_field, id_dest, feedback=feedback)
+
             for fid, node in nodes_dest.items():
                 all_nodes[f"dest_{fid}"] = node
         
@@ -322,7 +326,7 @@ class MatriceTemps(QgsProcessingAlgorithm):
         matrix = build_time_matrix(G, all_nodes, weight, feedback)
 
         feedback.pushInfo(f"Écriture du fichier de sortie : {fichier_sortie}")
-        matrix.to_csv(fichier_sortie)
+        matrix.to_csv(fichier_sortie, index=True)
         return {self.MATRIX: fichier_sortie}
 
         

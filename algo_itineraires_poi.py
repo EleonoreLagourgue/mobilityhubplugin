@@ -180,7 +180,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                 # =====================================================
                 itineraries.append(Itinerary(
                     origin=i, destination=j,
-                    mode_seq=["pt"],ratio_car = t_car/t_pt, hubs_required=[],
+                    mode_seq=["pt"], hubs_required=[],
                     travel_time=t_pt, id=iid
                 ))
                 iid += 1
@@ -191,9 +191,9 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                 t = matrix_car[i][j] #voiture
                 if t < t_pt * (1 - min_improvement) and t < t_max:
                     itineraries.append(Itinerary(
-                        origin=orig, destination=dest,
-                        mode_seq=["cs"],ratio_car = t_car/t,
-                        hubs_required=[(orig, "cs"), (dest, "cs")],
+                        origin=i, destination=j,
+                        mode_seq=["cs"],
+                        hubs_required=[i,j],
                         travel_time=t, id=iid
                     ))
                     iid += 1
@@ -202,8 +202,8 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                 if t < t_pt * (1 - min_improvement) and t < t_max:
                     itineraries.append(Itinerary(
                         origin=orig, destination=dest,
-                        mode_seq=["bs"], ratio_car = t_car/t,
-                        hubs_required=[(orig, "bs"), (dest, "bs")],
+                        mode_seq=["bs"], 
+                        hubs_required=[i,j],
                         travel_time=t, id=iid
                     ))
                     iid += 1
@@ -225,7 +225,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                     if walk_time < 20 and t1 < t_pt * (1 - min_improvement) and t1 < t_max: #A chercher
                         itineraries.append(Itinerary(
                             origin=i, destination=j,
-                            mode_seq=["pt", "walk"], ratio_car = t_car/t1,
+                            mode_seq=["pt", "walk"], 
                             hubs_required=[],
                             travel_time=t1, id=iid
                         ))
@@ -237,7 +237,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                         itineraries.append(Itinerary(
                             origin=i, destination=j,
                             mode_seq=["walk", "pt"], hubs_required=[],
-                            travel_time=t2, id=iid, ratio_car = t_car/t2
+                            travel_time=t2, id=iid,
                         ))
                         iid += 1
                 
@@ -252,9 +252,9 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                           + matrix_car[hub_id][j])
                     if t1 < t_pt * (1 - min_improvement) and t1 < t_max:
                         itineraries.append(Itinerary(
-                            origin=orig, destination=dest,
+                            origin=i, destination=j,
                             mode_seq=["pt", "cs"],
-                            hubs_required=[(hub_id, "cs")],ratio_car = t_car/t1,
+                            hubs_required=[(hub_id, "cs")],
                             travel_time=t1, time_car = t_car, itinerary_id=iid
                         ))
                         iid += 1
@@ -265,7 +265,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                         itineraries.append(Itinerary(
                             origin=orig, destination=dest,
                             mode_seq=["cs", "pt"],
-                            hubs_required=[(hub_id, "cs")],ratio_car = t_car/t2,
+                            hubs_required=[(hub_id, "cs")],
                             travel_time=t2,  time_car = t_car,itinerary_id=iid
                         ))
                         iid += 1
@@ -280,9 +280,9 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                           + matrix_bike[hub_id][j])
                     if t1 < t_pt * (1 - min_improvement) and t1 < t_max:
                         itineraries.append(Itinerary(
-                            origin=orig, destination=dest,
+                            origin=i, destination=j,
                             mode_seq=["pt", "cs"],
-                            hubs_required=[(hub_id, "cs")],ratio_car = t_car/t1,
+                            hubs_required=[(hub_id, "cs")],
                             travel_time=t1, time_car = t_car, itinerary_id=iid
                         ))
                         iid += 1
@@ -291,9 +291,9 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                           + matrix_pt[hub_id][j])
                     if t2 < t_pt * (1 - min_improvement) and t2 < t_max:
                         itineraries.append(Itinerary(
-                            origin=orig, destination=dest,
+                            origin=i, destination=j,
                             mode_seq=["cs", "pt"],
-                            hubs_required=[(hub_id, "cs")],ratio_car = t_car/t2,
+                            hubs_required=[(hub_id, "cs")],
                             travel_time=t2,  time_car = t_car,itinerary_id=iid
                         ))
                         iid += 1

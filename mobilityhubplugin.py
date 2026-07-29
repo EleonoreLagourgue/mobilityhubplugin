@@ -34,6 +34,8 @@ import os
 import sys
 import inspect
 
+from qgis.PyQt import sip
+
 from qgis.core import QgsProcessingAlgorithm, QgsApplication
 from .mobilityhubplugin_provider import MobilityHubPluginProvider
 
@@ -57,4 +59,6 @@ class MobilityHubPluginPlugin(object):
         self.initProcessing()
 
     def unload(self):
-        QgsApplication.processingRegistry().removeProvider(self.provider)
+        if self.provider is not None and not sip.isdeleted(self.provider):
+            QgsApplication.processingRegistry().removeProvider(self.provider)
+        self.provider = None

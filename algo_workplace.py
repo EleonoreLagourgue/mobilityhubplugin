@@ -3,6 +3,7 @@ from qgis.core import (
     QgsProcessingParameterFeatureSource,
     QgsProcessingParameterNumber,
     QgsProcessingParameterFeatureSink,
+    QgsProcessingParameterFile,
     QgsFeatureSink,
     QgsFields,
     QgsField,
@@ -11,7 +12,7 @@ from qgis.core import (
     QgsWkbTypes,
 )
 from qgis.PyQt.QtCore import QVariant
-from .optimization_model import WorkplaceProblemData, Itinerary, solve_workplace_model
+from .optimization_model import WorkplaceProblemData, WorkplaceItinerary, solve_workplace_model
 from mobilityhubplugin.conversions import build_workplace_problem_data
 
 class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
@@ -32,6 +33,7 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
     HUBS = "HUBS"
     OD_MATRIX = "OD_MATRIX"
     BUDGET = "BUDGET"
+    ITINERAIRES= "ITINERAIRES"
     OUTPUT = "OUTPUT"
     def createInstance(self):
         return LocateHubsWorkplaceAlgorithm()
@@ -51,7 +53,10 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterFeatureSource(self.NODES, "Nœuds de population (points)"))
         self.addParameter(QgsProcessingParameterFeatureSource(self.HUBS, "Hubs candidats (points)"))
-        self.addParameter(QgsProcessingParameterFeatureSource(self.OD_MATRIX, "Matrice OD (points)"))
+        self.addParameter(QgsProcessingParameterFile(self.OD_MATRIX, "Matrice OD"))
+        self.addParameter(QgsProcessingParameterFeatureSource(self.ITINERAIRES, 
+                                                              "Itinéraires potentiels"))
+
         self.addParameter(QgsProcessingParameterNumber(self.BUDGET, "Budget (€)", defaultValue=150000))
         self.addParameter(QgsProcessingParameterFeatureSink(self.OUTPUT, "Hubs sélectionnés"))
 
@@ -67,7 +72,7 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
         
         #od : origine_id, destination_id, volume => faire une fonction formatage
         
-        feedback.pushInfo("Construction des itinéraires potentiels (routage + élimination des dominés)...")
+        feedback.pushInfo("Construction des data...")
         data = build_workplace_problem_data(
             nodes_src, hubs_src, itineraries_src, od_src,
             fixed_cost_hub=1000.0,

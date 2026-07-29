@@ -25,19 +25,7 @@ from mobilityhubplugin.conversions import build_workplace_problem_data
 
 import pandas as pd
 class FormateODmatrix(QgsProcessingAlgorithm):
-    """
-    Miroir de LocateHubsPOIAlgorithm pour le modèle 'accessibilité aux emplois'
-    (équations 13-21 de l'article). La structure est identique : seule la
-    fonction objectif change (ratio temps voiture / temps trajet optimal,
-    pondéré par le volume de commuting w_ij, cf. eq. 13), et il n'y a pas
-    de seuil de temps de trajet (le modèle sélectionne toujours l'itinéraire
-    le plus rapide, contrainte 15).
-
-    À implémenter sur le même schéma que optimization_model.solve_poi_model :
-    - Variables : y_lm, u_lm, e_l, x_s (pas de z_sp ni a_ip, cf. section 3.2.3)
-    - Objectif : max somme(w_ij * r_s * x_s) / somme(w_ij)
-    - Contraintes (14)-(21)
-    """
+    
     OD_MATRIX = "OD_MATRIX"
     ORIGINE = "ORIGINE"
     DESTINATION = "DESTINATION"

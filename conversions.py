@@ -20,6 +20,8 @@ from .optimization_model import (
 
 import geopandas as gpd
 from shapely import wkt as shapely_wkt
+
+#%%
 def qgis_layer_to_gdf(layer: QgsVectorLayer) -> gpd.GeoDataFrame:
     """Convertit une QgsVectorLayer (n'importe quelle source : shapefile,
     gpkg, couche mémoire, couche filtrée...) en GeoDataFrame."""
@@ -41,9 +43,7 @@ def qgis_layer_to_gdf(layer: QgsVectorLayer) -> gpd.GeoDataFrame:
 
     gdf = gpd.GeoDataFrame(records, geometry="geometry", crs=crs)
 
-    # IMPORTANT : triple_index() suppose des LineString simples
-    # (g.coords[0], g.coords[-1]). Une couche avec des entités
-    # MultiLineString ferait planter cette logique -> on éclate.
+    #On explose les géométries multiples
     gdf = gdf.explode(index_parts=False).reset_index(drop=True)
 
     return gdf
@@ -120,7 +120,7 @@ def _decode_hub_key(key):
 
 
 def _encode_hub_requirements(hub_requirements):
-    return json.dumps([[l, m] for (l, m) in hub_requirements])
+    return json.dumps([[l] for (l) in hub_requirements])
 
 
 def _decode_hub_requirements(text):
@@ -143,8 +143,9 @@ POI_ITINERARY_FIELDS = [
     ("id", QVariant.String),
     ("node", QVariant.String),
     ("poi_category", QVariant.String),
+    ("mode_seq", QVariant.String),
     ("travel_time", QVariant.Double),
-    ("hub_requirements", QVariant.String),  # JSON
+    ("hubs_required", QVariant.String), 
     ("parking_demand", QVariant.String),     # JSON
 ]
 
@@ -167,8 +168,8 @@ def write_poi_itineraries_to_sink(itineraries, sink):
     for it in itineraries:
         f = QgsFeature(fields)
         f.setAttributes([
-            it.id, it.node, it.poi_category, it.travel_time,
-            _encode_hub_requirements(it.hub_requirements),
+            it.id, it.node, it.poi_category,it.mode_seq, it.travel_time,
+            it.hubs_required,
             _encode_parking_demand(it.parking_demand),
         ])
         sink.addFeature(f, QgsFeatureSink.FastInsert)
@@ -192,7 +193,7 @@ def get_available_modes(itineraries_src, extra_modes=None):
     """
     modes = set()
     for f in itineraries_src.getFeatures():
-        for (_l, m) in _decode_hub_requirements(f["hub_requirements"]):
+        for  m in _decode_hub_requirements(f["mode_seq"]):
             modes.add(m)
     if extra_modes:
         modes.update(extra_modes)
@@ -211,8 +212,9 @@ def read_poi_itineraries_from_source(source):
             id=f["id"],
             node=f["node"],
             poi_category=f["poi_category"],
+            mode_seq = f["mode_seq"],
             travel_time=f["travel_time"],
-            hub_requirements=_decode_hub_requirements(f["hub_requirements"]),
+            hubs_required=_decode_hub_requirements(f["hubs_required"]),
             parking_demand=_decode_parking_demand(f["parking_demand"]),
         ))
     return itineraries
@@ -264,7 +266,8 @@ WP_ITINERARY_FIELDS = [
     ("destination", QVariant.String),
     ("travel_time", QVariant.Double),
     ("ratio_car", QVariant.Double),
-    ("hub_requirements", QVariant.String),  # JSON
+    ("mode_seq", QVariant.String),
+    ("hubs_required", QVariant.String),  # JSON
     ("parking_demand", QVariant.String),     # JSON
 ]
 
@@ -282,7 +285,7 @@ def write_wp_itineraries_to_sink(itineraries, sink):
         f = QgsFeature(fields)
         f.setAttributes([
             it.id, it.origin, it.destination, it.travel_time, it.ratio_car,
-            _encode_hub_requirements(it.hub_requirements),
+            it.mode_seq,it.hubs_required,
             _encode_parking_demand(it.parking_demand),
         ])
         sink.addFeature(f, QgsFeatureSink.FastInsert)
@@ -297,7 +300,8 @@ def read_wp_itineraries_from_source(source):
             destination=f["destination"],
             travel_time=f["travel_time"],
             ratio_car=f["ratio_car"],
-            hub_requirements=_decode_hub_requirements(f["hub_requirements"]),
+            mode_seq = f["mode_seq"],
+            hubs_required=f["hubs_required"],
             parking_demand=_decode_parking_demand(f["parking_demand"]),
         ))
     return itineraries
