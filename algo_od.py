@@ -13,6 +13,7 @@ from qgis.core import (
     QgsProcessingParameterFileDestination,
     QgsProcessingParameterField,
     QgsProcessingParameterFile,
+    QgsProcessingParameterString,
     QgsFeatureSink,
     QgsFields,
     QgsField,
@@ -50,15 +51,15 @@ class FormateODmatrix(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterFile(self.OD_MATRIX, 
                                                      "Matrice OD (fichier)",
                                                      behavior=QgsProcessingParameterFile.File))
-        self.addParameter(QgsProcessingParameterField(self.ORIGINE, 
-                                                      "Colonne origine",
-                                                      parentLayerParameterName=self.OD_MATRIX))
-        self.addParameter(QgsProcessingParameterField(self.DESTINATION, 
-                                                      "Colonne destination",
-                                                      parentLayerParameterName=self.OD_MATRIX))
-        self.addParameter(QgsProcessingParameterField(self.COMPTEUR, 
-                                                      "Colonne renseignant le poids de l'individu (ex: avec les données Mobpro colonne IPONDI)",
-                                                      parentLayerParameterName=self.OD_MATRIX))
+        self.addParameter(QgsProcessingParameterString(self.ORIGINE, 
+                                                      "Colonne origine"
+                                                     ))
+        self.addParameter(QgsProcessingParameterString(self.DESTINATION, 
+                                                      "Colonne destination"
+                                                      ))
+        self.addParameter(QgsProcessingParameterString(self.COMPTEUR, 
+                                                      "Colonne renseignant le poids de l'individu (ex: avec les données Mobpro colonne IPONDI)"
+                                                     ))
         self.addParameter(
             QgsProcessingParameterFileDestination(self.OUTPUT, "Fichier de sortie",
                                        fileFilter='*.csv',
@@ -72,11 +73,23 @@ class FormateODmatrix(QgsProcessingAlgorithm):
         cpt = self.parameterAsString(parameters, self.COMPTEUR, context)
         output_file = self.parameterAsFileOutput(parameters, self.OUTPUT, context)
 
-        od_matrix = pd.read_csv(nodes_file)
-        feedback.pushInfo(od_matrix)
-        feedback.pushInfo(od_matrix[origine])
+        od_matrix = pd.read_csv(nodes_file,  sep=None, dtype = str, engine='python')
+        feedback.pushInfo(f"Colonnes lues : {od_matrix.columns.tolist()}")
+        feedback.pushInfo(f"Type origine lu : {od_matrix[origine][:5]}")
+        feedback.pushInfo(f"Shape : {od_matrix.shape}")
+                
+        valeurs_reelles = set(od_matrix.columns)
 
-
+        for label, val in [("Origine", origine),
+                            ("Destination", dest),
+                            ("Volume", cpt)]:
+            if val not in valeurs_reelles:
+                feedback.reportError(
+                    f"La valeur '{val}' ({label}) n'existe pas dans la  "
+                    f"'matrice OD'. Valeurs disponibles : {sorted(valeurs_reelles)}",
+                    fatalError=True
+                )
+                return {}
         flux =(od_matrix
                 .groupby([origine, dest])[cpt]
                 .sum()
