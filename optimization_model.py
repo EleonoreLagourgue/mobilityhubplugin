@@ -55,7 +55,7 @@ class WorkplaceProblemData :
     budget: float                 # B
 
 
-def solve_poi_model(data: ProblemData, time_limit_s: int = 300):
+def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300):
     """Résout le MIP d'accessibilité aux POI et renvoie les décisions."""
     prob = pulp.LpProblem("poi_accessibility", pulp.LpMaximize)
 
@@ -73,14 +73,15 @@ def solve_poi_model(data: ProblemData, time_limit_s: int = 300):
     nodes_pois = {(it.node, it.poi_category) for it in data.itineraries}
     a = {np_: pulp.LpVariable(f"a_{np_[0]}_{np_[1]}", cat="Binary") for np_ in nodes_pois}
 
-    # --- objectif (1) ---
+    # --- Objectif ---
     total_pop = sum(data.population.values())
     n_cat = len(data.poi_categories)
     prob += pulp.lpSum(
         data.population[node] * a[(node, cat)] for (node, cat) in nodes_pois
     ) / (total_pop * n_cat)
+    feedback.pushInfo("Objectif ajouté")
 
-    # --- contraintes (2)-(5) : par itinéraire ---
+    # --- contraintes : par itinéraire ---
     for it in data.itineraries:
         for (l, m) in it.hub_requirements:
             prob += x[it.id] <= y[(l, m)]                       # (2)
@@ -93,7 +94,7 @@ def solve_poi_model(data: ProblemData, time_limit_s: int = 300):
             t_hat = data.travel_time_threshold[cat]
             prob += it.travel_time * z[it.id] <= t_hat + data.big_m * (1 - a[(node, cat)])  # (5)
 
-    # --- contrainte (6) : places de parking ---
+    # --- contrainte : places de parking ---
     for l in data.hub_locations:
         for m in data.modes:
             demand = pulp.lpSum(
@@ -101,7 +102,7 @@ def solve_poi_model(data: ProblemData, time_limit_s: int = 300):
             )
             prob += demand <= u[(l, m)]
 
-    # --- contraintes (7)-(9) : coûts d'installation / budget ---
+    # --- contraintes : coûts d'installation / budget ---
     for l in data.hub_locations:
         for m in data.modes:
             prob += data.fixed_cost_hub * y[(l, m)] <= e[l]        # (7)
@@ -112,10 +113,17 @@ def solve_poi_model(data: ProblemData, time_limit_s: int = 300):
         for l in data.hub_locations
     ) <= data.budget                                                # (8)
 
+    feedback.pushInfo("Contraintes ajoutées")
+
     # --- résolution ---
     solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s)
     prob.solve(solver)
-
+    #Vérif
+    for v in prob.variables():
+        #feedback.pushInfo(f"{v.name}, {v.varValue}")
+        if v.varValue is None:
+            feedback.pushInfo(f"Variable non résolue : {v.name}")
+            
     hubs_selected = {(l, m): pulp.value(y[(l, m)]) for (l, m) in y if pulp.value(y[(l, m)]) > 0.5}
     parking = {(l, m): pulp.value(u[(l, m)]) for (l, m) in u if pulp.value(u[(l, m)]) and pulp.value(u[(l, m)]) > 0}
     itineraries_used = [it.id for it in data.itineraries if pulp.value(x[it.id]) > 0.5]
@@ -149,8 +157,8 @@ def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: in
     feedback.pushInfo(f"Exemple od_pairs : {list(od_pairs)[:3]}")
     feedback.pushInfo(f"Types od_pairs : {[(type(o[0]), type(o[1])) for o in list(od_pairs)[:3]]}")
 
-    for od in od_pairs:
-        feedback.pushInfo(f"Volume par od : {data.commuting_volume.get(od, 0)}")
+    # for od in od_pairs:
+    #     feedback.pushInfo(f"Volume par od : {data.commuting_volume.get(od, 0)}")
 
     total_w = sum(data.commuting_volume.get(od, 0) for od in od_pairs) or 1.0
     feedback.pushInfo(f"Volume total : {total_w}")
@@ -198,7 +206,6 @@ def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: in
     prob.solve(solver)
     feedback.pushInfo("Résolution faite")
     status = pulp.LpStatus[prob.status]
-    feedback.pushInfo(str(status))
     
     #Vérif
     for v in prob.variables():
@@ -211,7 +218,6 @@ def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: in
     parking = {(l, m): pulp.value(u[(l, m)]) for (l, m) in u if pulp.value(u[(l, m)]) and pulp.value(u[(l, m)]) > 0}
     itineraries_used = [it.id for it in data.itineraries if pulp.value(x[it.id]) > 0.5]
 
-    feedback.pushInfo(str(pulp.value(prob.objective)))
 
 
     

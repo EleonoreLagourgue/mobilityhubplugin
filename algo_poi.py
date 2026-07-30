@@ -128,8 +128,8 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
 
         feedback.pushInfo("Construction des itinéraires potentiels (routage + élimination des dominés)...")
         
-        #modes : à récupérer selon itineraires.mod_seq unique() 
-        data = build_poi_problem_data(
+        #modes : dans hubs_required 
+        data = build_poi_problem_data(feedback,
             nodes_src, hubs_src, itineraries_src,
             poi_categories=categories,
             travel_time_threshold=dict_travel,
@@ -141,7 +141,7 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
 
 
         feedback.pushInfo(f"{len(data.itineraries)} itinéraires potentiels générés. Résolution du MIP...")
-        result = solve_poi_model(data, time_limit_s=300)
+        result = solve_poi_model(feedback,data, time_limit_s=300)
         feedback.pushInfo(f"Statut : {result['status']} — accessibilité obtenue : {result['objective']:.3f}")
 
         fields = QgsFields()
@@ -152,7 +152,9 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
             parameters, self.OUTPUT, context, fields, QgsWkbTypes.Point, hubs_src.sourceCrs()
         )
 
-        hub_features = {f["id"]: f for f in hubs_src.getFeatures()}
+        hub_features = {f"hub_{f['fid']}": f for f in hubs_src.getFeatures()}
+        node_features = {f"pop_{f['code_insee']}": f for f in nodes_src.getFeatures()}
+        hub_features.update(node_features)        
         for (hub_id, mode) in result["hubs"]:
             src_feat = hub_features.get(hub_id)
             if src_feat is None:

@@ -108,14 +108,21 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
         (sink, dest_id) = self.parameterAsSink(
             parameters, self.OUTPUT, context, fields, QgsWkbTypes.Point, hubs_src.sourceCrs()
         )
-
+        
+        feedback.pushInfo(str(result["hubs"])[:25])
         hub_features = {f"hub_{f['fid']}": f for f in hubs_src.getFeatures()}
-        node_features = {f"hub_{f['code_insee']}": f for f in nodes_src.getFeatures()}
+        node_features = {f"pop_{f['code_insee']}": f for f in nodes_src.getFeatures()}
         hub_features.update(node_features)
+        feedback.pushInfo(str(hub_features))
+
         for (hub_id, mode) in result["hubs"]:
             src_feat = hub_features.get(hub_id)
             if src_feat is None:
+                feedback.pushInfo("Dommage ! Passons au suivant ")
+
                 continue
+            feedback.pushInfo(f"Match trouvé : {src_feat}")
+
             out_feat = QgsFeature(fields)
             out_feat.setGeometry(src_feat.geometry())
             out_feat.setAttributes([hub_id, mode])

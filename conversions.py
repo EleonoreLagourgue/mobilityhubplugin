@@ -222,7 +222,7 @@ def read_poi_itineraries_from_source(source):
         ))
     return itineraries
 
-def build_poi_problem_data(nodes_src, hubs_src, itineraries_src,
+def build_poi_problem_data(feedback,nodes_src, hubs_src, itineraries_src,
                              poi_categories, travel_time_threshold,
                              modes=None, fixed_cost_hub=1000.0, fixed_cost_mode=None, budget=0,
                              node_id_field="id", node_pop_field="population",
@@ -237,10 +237,14 @@ def build_poi_problem_data(nodes_src, hubs_src, itineraries_src,
     simples paramètres Processing (pas besoin de les faire transiter par une
     couche : QgsProcessingParameterNumber/String/Matrix suffisent).
     """
-    population = {f[node_id_field]: f[node_pop_field] for f in nodes_src.getFeatures()}
+    population = {f"pop_{f[node_id_field]}": f[node_pop_field] for f in nodes_src.getFeatures()}
     hub_locations = [f[hub_id_field] for f in hubs_src.getFeatures()]
+    node = [f"pop_{f[node_id_field]}" for f in nodes_src.getFeatures()]
+    hub_locations.extend(node)
+
+
     if modes is None:
-        modes = get_available_modes(itineraries_src, extra_modes=["pt"])
+        modes = get_available_modes(feedback,itineraries_src, extra_modes=["pt"])
     fixed_cost_mode = fixed_cost_mode or {}
     fixed_cost_mode = {m: fixed_cost_mode.get(m, 0.0) for m in modes}
     
@@ -332,7 +336,6 @@ def build_workplace_problem_data(feedback,hubs_src, itineraries_src,nodes_src, o
 
     itineraries = read_wp_itineraries_from_source(feedback,itineraries_src)
     hub_locations.extend(node)
-    feedback.pushInfo(f"Hubs détectés : {hub_locations}")
 
     return WorkplaceProblemData(
         commuting_volume=commuting_volume,
