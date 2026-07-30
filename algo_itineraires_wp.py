@@ -108,7 +108,7 @@ def elimination_itineraires_domines(itineraires):
             req_c = set(cand.hubs_required)
             for better in non_dominated:
                 req_b = set(better.hubs_required)
-                # cand dominé si ses requirements sont un surensemble de ceux de better
+                #cand dominé si ses requirements sont un surensemble de ceux de better
                 # ET better est plus rapide (garanti par le tri i.e. sorted)
                 if req_b.issubset(req_c):
                     dominated = True
@@ -428,11 +428,11 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         
         list_dict =[]
         for it in iti_finaux:
-            list_dict.append({"id":iti_finaux.id, "origin": iti_finaux.origin,
-                              "destination": iti_finaux.destination, 
-                              "travel_time": iti_finaux.travel_time,
-                              "ratio_car": iti_finaux.ratio_car, 
-                              "hubs_required": iti_finaux.hubs_required,
+            list_dict.append({"id":it.id, "origin": it.origin,
+                              "destination": it.destination, 
+                              "travel_time": it.travel_time,
+                              "ratio_car": it.ratio_car, 
+                              "hubs_required": it.hubs_required,
                               })
         write_wp_itineraries_to_sink(iti_finaux, sink)
         return {self.OUTPUT: dest_id}

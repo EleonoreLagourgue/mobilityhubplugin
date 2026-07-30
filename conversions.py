@@ -134,6 +134,35 @@ def _encode_parking_demand(parking_demand):
 def _decode_parking_demand(text):
     return {_decode_hub_key(k): v for k, v in json.loads(text).items()}
 
+def get_available_modes(feedback, itineraries_src, extra_modes=None):
+    """
+    Parcourt la table d'itinéraires et extrait l'ensemble des modes
+    effectivement utilisés dans hub_requirements (ex: 'bs', 'cs').
+
+    À utiliser à la place d'une liste de modes codée en dur : le modèle
+    n'a besoin de créer des variables y_lm/u_lm que pour les modes qui
+    apparaissent réellement dans au moins un itinéraire potentiel.
+
+    - extra_modes : modes à toujours inclure même s'ils n'apparaissent pas
+      dans hub_requirements (ex: 'pt', car les itinéraires 100% transport
+      public n'ont pas de hub_requirements et n'apparaîtraient donc jamais
+      ici, alors qu'ils comptent quand même comme mode disponible).
+    """
+    modes = set()
+    for f in itineraries_src.getFeatures():
+        feedback.pushInfo(f["hubs_required"])
+        hubs_required = f["hubs_required"]
+        if isinstance(hubs_required, str):
+            hubs_required = json.loads(hubs_required)
+        for couple in hubs_required:
+            feedback.pushInfo(str(couple))
+
+            l,m= couple
+            modes.add(m)
+    if extra_modes:
+        modes.update(extra_modes)
+    return sorted(modes)
+
 #%%POI
 # ---------------------------------------------------------------------
 # Modèle POI : Itinerary <-> features
@@ -158,10 +187,8 @@ def make_poi_itinerary_fields():
 
 def write_poi_itineraries_to_sink(itineraries, sink):
     """
-    À appeler dans votre algorithme de construction, à la place d'écrire
-    des Itinerary directement : pour chaque itinéraire calculé, construisez
-    une QgsFeature avec ces champs et ajoutez-la au sink (QgsProcessingParameterFeatureSink,
-    de type NoGeometry si vous n'avez pas de géométrie pertinente à associer).
+    Permet de passer d'une class Itinerary à un QgsFeature à ajouter au sink
+    de type NoGeometry 
     """
     fields = make_poi_itinerary_fields()
     for it in itineraries:
@@ -175,28 +202,6 @@ def write_poi_itineraries_to_sink(itineraries, sink):
 
 
 
-
-def get_available_modes(itineraries_src, extra_modes=None):
-    """
-    Parcourt la table d'itinéraires et extrait l'ensemble des modes
-    effectivement utilisés dans hub_requirements (ex: 'bs', 'cs').
-
-    À utiliser à la place d'une liste de modes codée en dur : le modèle
-    n'a besoin de créer des variables y_lm/u_lm que pour les modes qui
-    apparaissent réellement dans au moins un itinéraire potentiel.
-
-    - extra_modes : modes à toujours inclure même s'ils n'apparaissent pas
-      dans hub_requirements (ex: 'pt', car les itinéraires 100% transport
-      public n'ont pas de hub_requirements et n'apparaîtraient donc jamais
-      ici, alors qu'ils comptent quand même comme mode disponible).
-    """
-    modes = set()
-    for f in itineraries_src.getFeatures():
-        for  m in (f["mode_seq"]):
-            modes.add(m)
-    if extra_modes:
-        modes.update(extra_modes)
-    return sorted(modes)
 
 
 def read_poi_itineraries_from_source(source):
@@ -288,7 +293,7 @@ def write_wp_itineraries_to_sink(itineraries, sink):
         sink.addFeature(f, QgsFeatureSink.FastInsert)
 
 
-def read_wp_itineraries_from_source(source):
+def read_wp_itineraries_from_source(feedback,source):
     itineraries = []
     for f in source.getFeatures():
         itineraries.append(WorkplaceItinerary(
@@ -303,7 +308,7 @@ def read_wp_itineraries_from_source(source):
     return itineraries
 
 
-def build_workplace_problem_data(hubs_src, itineraries_src, od_gdf,
+def build_workplace_problem_data(feedback,hubs_src, itineraries_src, od_gdf,
                                     modes=None, fixed_cost_hub=1000.0, fixed_cost_mode=None, budget=0,
                                     hub_id_field="fid",
                                     od_origin_field="origine_id", od_dest_field="destination_id",
@@ -315,11 +320,11 @@ def build_workplace_problem_data(hubs_src, itineraries_src, od_gdf,
     od_gdf[od_volume_field]
     ))
     if modes is None:
-        modes = get_available_modes(itineraries_src, extra_modes=["pt"])
+        modes = get_available_modes(feedback,itineraries_src, extra_modes=["pt"])
     fixed_cost_mode = fixed_cost_mode or {}
     fixed_cost_mode = {m: fixed_cost_mode.get(m, 0.0) for m in modes}
     hub_locations = [f[hub_id_field] for f in hubs_src.getFeatures()]
-    itineraries = read_wp_itineraries_from_source(itineraries_src)
+    itineraries = read_wp_itineraries_from_source(feedback,itineraries_src)
 
     return WorkplaceProblemData(
         commuting_volume=commuting_volume,

@@ -153,7 +153,7 @@ def solve_workplace_model(data: WorkplaceProblemData , time_limit_s: int = 300):
     
     # --- contrainte (14) : feasibilité selon hubs/modes choisis ---
     for it in data.itineraries:
-        for (l, m) in it.hubs_required, it.mode_seq:
+        for (l, m) in it.hubs_required:
             prob += x[it.id] <= y[(l, m)]
 
     # --- contrainte (15) : exactement un itinéraire choisi par connexion (i,j) ---

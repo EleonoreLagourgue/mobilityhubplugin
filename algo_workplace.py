@@ -12,6 +12,7 @@ from qgis.core import (
     QgsFeature,
     QgsGeometry,
     QgsWkbTypes,
+    QgsProcessingException,
 )
 from qgis.PyQt.QtCore import QVariant
 from .optimization_model import WorkplaceProblemData, WorkplaceItinerary, solve_workplace_model
@@ -81,12 +82,12 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
 
         layer = QgsVectorLayer(itineraries_file, 'input_layer', 'ogr')
         if not layer.isValid():
-            raise QgsProcessingException(self.tr(f"Fichier invalide : {file_path}"))
+            raise QgsProcessingException(self.tr(f"Fichier invalide : {itineraries_file}"))
     
         itineraries_src = QgsProcessingFeatureSource(layer, context)
 
         feedback.pushInfo("Construction des data...")
-        data = build_workplace_problem_data(
+        data = build_workplace_problem_data(feedback,
             hubs_src, itineraries_src, od,
             fixed_cost_hub=1000.0,
             fixed_cost_mode={"bs": 300.0, "cs": 7500.0, "pt": 0.0},
