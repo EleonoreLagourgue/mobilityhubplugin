@@ -25,6 +25,7 @@ from qgis.PyQt.QtCore import QVariant
 from mobilityhubplugin.conversions import build_workplace_problem_data
 
 import pandas as pd
+import csv
 class FormateODmatrix(QgsProcessingAlgorithm):
     
     OD_MATRIX = "OD_MATRIX"
@@ -73,7 +74,9 @@ class FormateODmatrix(QgsProcessingAlgorithm):
         cpt = self.parameterAsString(parameters, self.COMPTEUR, context)
         output_file = self.parameterAsFileOutput(parameters, self.OUTPUT, context)
 
-        od_matrix = pd.read_csv(nodes_file,  sep=None, dtype = str, engine='python')
+        od_matrix = pd.read_csv(nodes_file,  
+                                sep=None,dtype={origine: str, dest: str},
+                                engine='python')
         feedback.pushInfo(f"Colonnes lues : {od_matrix.columns.tolist()}")
         feedback.pushInfo(f"Type origine lu : {od_matrix[origine][:5]}")
         feedback.pushInfo(f"Shape : {od_matrix.shape}")
@@ -97,7 +100,11 @@ class FormateODmatrix(QgsProcessingAlgorithm):
                 .rename(columns={origine: "origine_id",
                                  dest:    "destination_id",
                                  cpt:  "volume"}))
-        flux.to_csv(output_file)
+        flux["origine_id"] = flux["origine_id"].astype(str)
+        flux["destination_id"] = flux["destination_id"].astype(str)
+        feedback.pushInfo(f"Type origine lu : {flux['origine_id'][:5]}")
+
+        flux.to_csv(output_file, quoting=csv.QUOTE_NONNUMERIC)
         feedback.pushInfo("Fait !")
         
         return {self.OD_MATRIX:self.OD_MATRIX}

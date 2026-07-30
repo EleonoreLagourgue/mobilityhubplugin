@@ -195,10 +195,10 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
 
         self.addParameter(QgsProcessingParameterFeatureSink(
            self.OUTPUT, "Itinéraires potentiels (table)"))
-        self.addParameter(QgsProcessingParameterFileDestination(self.OUTPUT, 
-                                                                "Fichier d'emplacement de la matrice de temps",
-                                                                fileFilter='*.csv',
-                                                                defaultValue='*.csv'))
+        # self.addParameter(QgsProcessingParameterFileDestination(self.OUTPUT, 
+        #                                                         "Fichier d'emplacement de la matrice de temps",
+        #                                                         fileFilter='*.csv',
+        #                                                         defaultValue='*.csv'))
         
     def processAlgorithm(self, parameters, context, feedback):
         nodes_layer = self.parameterAsVectorLayer(parameters, self.POP, context)#QgsProcessingFeatureSource
@@ -242,6 +242,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         itineraries = []
         iid = 0 #compteur pour créer l'id de chaque itinéraire
         
+        #Lecture matrice od
         od = pd.read_csv(od_path,  sep=";")
         feedback.pushInfo(f"Colonnes lues : {od.columns.tolist()}")
         feedback.pushInfo(f"Index lu : {od.index.tolist()[:5]}")
@@ -302,7 +303,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                 # =====================================================
                 itineraries.append(WorkplaceItinerary(
                     origin=i, destination=j,
-                    mode_seq=["pt"],ratio_car = t_car/t_pt, hubs_required=[],
+                    ratio_car = t_car/t_pt, hubs_required=[],
                     travel_time=t_pt, id=iid, parking_demand = {}
                 ))
                 iid += 1
@@ -317,7 +318,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                     itineraries.append(WorkplaceItinerary(
                         origin=i, destination=j,
                         mode_seq=["cs"],ratio_car = t_car/t,
-                        hubs_required=[i,j],
+                        hubs_required=[(i,"cs"),(j,"cs")],
                         travel_time=t, id=iid, 
                         parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
                     ))
@@ -329,8 +330,8 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
 
                     itineraries.append(WorkplaceItinerary(
                         origin=i, destination=j,
-                        mode_seq=["bs"], ratio_car = t_car/t,
-                        hubs_required=[i,j],
+                        ratio_car = t_car/t,
+                        hubs_required=hubs_req,
                         travel_time=t, id=iid,
                         parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
 
@@ -357,8 +358,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
 
                         itineraries.append(WorkplaceItinerary(
                             origin=i, destination=j,
-                            mode_seq=["pt", "cs"],
-                            hubs_required=[hub_id,j],ratio_car = t_car/t1,
+                            hubs_required=hubs_req,ratio_car = t_car/t1,
                             travel_time=t1, time_car = t_car, id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
 
@@ -372,8 +372,8 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
 
                         itineraries.append(WorkplaceItinerary(
                             origin=i, destination=j,
-                            mode_seq=["cs", "pt"],
-                            hubs_required=[i,hub_id],ratio_car = t_car/t2,
+
+                            hubs_required=hubs_req,ratio_car = t_car/t2,
                             travel_time=t2,  time_car = t_car,id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
 
@@ -393,8 +393,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
 
                         itineraries.append(WorkplaceItinerary(
                             origin=i, destination=j,
-                            mode_seq=["pt", "bs"],
-                            hubs_required=[hub_id,j],ratio_car = t_car/t1,
+                            hubs_required=hubs_req,ratio_car = t_car/t1,
                             travel_time=t1, time_car = t_car, id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
 
@@ -408,8 +407,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
 
                         itineraries.append(WorkplaceItinerary(
                             origin=i, destination=j,
-                            mode_seq=["bs", "pt"],
-                            hubs_required=[i,hub_id],ratio_car = t_car/t2,
+                            hubs_required=hubs_req,ratio_car = t_car/t2,
                             travel_time=t2,  time_car = t_car,id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
 

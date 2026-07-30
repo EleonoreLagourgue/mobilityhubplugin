@@ -5,6 +5,8 @@ from qgis.core import (
     QgsProcessingParameterFeatureSink,
     QgsProcessingParameterFile,
     QgsFeatureSink,
+    QgsVectorLayer,
+    QgsProcessingFeatureSource,
     QgsFields,
     QgsField,
     QgsFeature,
@@ -14,6 +16,8 @@ from qgis.core import (
 from qgis.PyQt.QtCore import QVariant
 from .optimization_model import WorkplaceProblemData, WorkplaceItinerary, solve_workplace_model
 from mobilityhubplugin.conversions import build_workplace_problem_data
+
+import pandas as pd
 
 class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
     """
@@ -54,7 +58,7 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterFeatureSource(self.NODES, "Nœuds de population (points)"))
         self.addParameter(QgsProcessingParameterFeatureSource(self.HUBS, "Hubs candidats (points)"))
         self.addParameter(QgsProcessingParameterFile(self.OD_MATRIX, "Matrice OD"))
-        self.addParameter(QgsProcessingParameterFeatureSource(self.ITINERAIRES, 
+        self.addParameter(QgsProcessingParameterFile(self.ITINERAIRES, 
                                                               "Itinéraires potentiels"))
 
         self.addParameter(QgsProcessingParameterNumber(self.BUDGET, "Budget (€)", defaultValue=150000))
@@ -65,16 +69,25 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
         nodes_src = self.parameterAsSource(parameters, self.NODES, context)
         hubs_src = self.parameterAsSource(parameters, self.HUBS, context)
         budget = self.parameterAsDouble(parameters, self.BUDGET, context)
-        od_src = self.parameterAsSource(parameters, self.OD_MATRIX, context)
-        itineraries_src = self.parameterAsSource(parameters, self.ITINERAIRES, context)
+        od_path = self.parameterAsFile(parameters, self.OD_MATRIX, context)
+        itineraries_file = self.parameterAsFile(parameters, self.ITINERAIRES, context)
         budget = self.parameterAsDouble(parameters, self.BUDGET, context)#float
         
         
         #od : origine_id, destination_id, volume => faire une fonction formatage
-        
+        od = pd.read_csv(od_path,  sep=",", index_col=0)
+        feedback.pushInfo(f"Colonnes lues : {od.columns.tolist()}")
+        feedback.pushInfo(f"Type origine lu : {od['origine_id'][:5]}")
+
+        layer = QgsVectorLayer(itineraries_file, 'input_layer', 'ogr')
+        if not layer.isValid():
+            raise QgsProcessingException(self.tr(f"Fichier invalide : {file_path}"))
+    
+        itineraries_src = QgsProcessingFeatureSource(layer, context)
+
         feedback.pushInfo("Construction des data...")
         data = build_workplace_problem_data(
-            nodes_src, hubs_src, itineraries_src, od_src,
+            hubs_src, itineraries_src, od,
             fixed_cost_hub=1000.0,
             fixed_cost_mode={"bs": 300.0, "cs": 7500.0, "pt": 0.0},
             budget=budget,

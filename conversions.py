@@ -120,7 +120,7 @@ def _decode_hub_key(key):
 
 
 def _encode_hub_requirements(hub_requirements):
-    return json.dumps([[l] for (l) in hub_requirements])
+    return json.dumps([[l,m] for (l,m) in hub_requirements])
 
 
 def _decode_hub_requirements(text):
@@ -168,8 +168,8 @@ def write_poi_itineraries_to_sink(itineraries, sink):
     for it in itineraries:
         f = QgsFeature(fields)
         f.setAttributes([
-            it.id, it.node, it.poi_category,it.mode_seq, it.travel_time,
-            it.hubs_required,
+            it.id, it.node, it.poi_category, it.travel_time,
+            _encode_hub_requirements(it.hubs_required),
             _encode_parking_demand(it.parking_demand),
         ])
         sink.addFeature(f, QgsFeatureSink.FastInsert)
@@ -193,7 +193,7 @@ def get_available_modes(itineraries_src, extra_modes=None):
     """
     modes = set()
     for f in itineraries_src.getFeatures():
-        for  m in _decode_hub_requirements(f["mode_seq"]):
+        for  m in (f["mode_seq"]):
             modes.add(m)
     if extra_modes:
         modes.update(extra_modes)
@@ -212,7 +212,6 @@ def read_poi_itineraries_from_source(source):
             id=f["id"],
             node=f["node"],
             poi_category=f["poi_category"],
-            mode_seq = f["mode_seq"],
             travel_time=f["travel_time"],
             hubs_required=_decode_hub_requirements(f["hubs_required"]),
             parking_demand=_decode_parking_demand(f["parking_demand"]),
@@ -266,7 +265,6 @@ WP_ITINERARY_FIELDS = [
     ("destination", QVariant.String),
     ("travel_time", QVariant.Double),
     ("ratio_car", QVariant.Double),
-    ("mode_seq", QVariant.String),
     ("hubs_required", QVariant.String),  # JSON
     ("parking_demand", QVariant.String),     # JSON
 ]
@@ -285,7 +283,7 @@ def write_wp_itineraries_to_sink(itineraries, sink):
         f = QgsFeature(fields)
         f.setAttributes([
             it.id, it.origin, it.destination, it.travel_time, it.ratio_car,
-            it.mode_seq,it.hubs_required,
+            _encode_hub_requirements(it.hubs_required),
             _encode_parking_demand(it.parking_demand),
         ])
         sink.addFeature(f, QgsFeatureSink.FastInsert)
@@ -300,22 +298,23 @@ def read_wp_itineraries_from_source(source):
             destination=f["destination"],
             travel_time=f["travel_time"],
             ratio_car=f["ratio_car"],
-            mode_seq = f["mode_seq"],
-            hubs_required=f["hubs_required"],
+            hubs_required=_decode_hub_requirements(f["hubs_required"]),
             parking_demand=_decode_parking_demand(f["parking_demand"]),
         ))
     return itineraries
 
 
-def build_workplace_problem_data(hubs_src, itineraries_src, od_src,
+def build_workplace_problem_data(hubs_src, itineraries_src, od_gdf,
                                     modes=None, fixed_cost_hub=1000.0, fixed_cost_mode=None, budget=0,
-                                    hub_id_field="id",
-                                    od_origin_field="origin_id", od_dest_field="destination_id",
+                                    hub_id_field="fid",
+                                    od_origin_field="origine_id", od_dest_field="destination_id",
                                     od_volume_field="volume"):
-    commuting_volume = {
-        (f[od_origin_field], f[od_dest_field]): f[od_volume_field]
-        for f in od_src.getFeatures()
-    }
+    #A mettre en paramètres
+    
+    commuting_volume = dict(zip(
+    zip(od_gdf[od_origin_field], od_gdf[od_dest_field]),
+    od_gdf[od_volume_field]
+    ))
     if modes is None:
         modes = get_available_modes(itineraries_src, extra_modes=["pt"])
     fixed_cost_mode = fixed_cost_mode or {}

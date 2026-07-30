@@ -17,7 +17,6 @@ class Itinerary:
     node: str            # population node i
     poi_category: str    # POI category p
     travel_time: float    # t_s
-    mode_eq : str
     hubs_required: list  # [(hub_location, mode), ...]
     parking_demand: dict  # {(hub_location, mode): delta_lms}
 
@@ -42,15 +41,13 @@ class WorkplaceItinerary:
     destination: str        # population node j
     travel_time: float       # t_s (temps du trajet public/intermodal)
     ratio_car: float         # r_s = temps voiture / temps de ce trajet (eq. 13)
-    mode_seq : str
     hubs_required: list    # [(hub_location, mode), ...]
     parking_demand: dict      # {(hub_location, mode): delta_lms}
 
 @dataclass
 class WorkplaceProblemData :
-    commuting_volume: dict          # {node: n_i}
+    commuting_volume: dict          # {(i, j): w_ij}
     hub_locations: list        # list of l
-    flux: list                  #
     modes: list                 # list of m
     itineraries: list           # list[Itinerary]
     fixed_cost_hub: float        # c^F
@@ -144,37 +141,46 @@ def solve_workplace_model(data: WorkplaceProblemData , time_limit_s: int = 300):
     od_pairs = {(it.origin, it.destination) for it in data.itineraries}
 
     # --- objectif (13) ---
+    obj_var = pulp.LpVariable("obj_wp", lowBound=0, upBound=1)
+
     total_w = sum(data.commuting_volume.get(od, 0) for od in od_pairs) or 1.0
     prob += pulp.lpSum(
         data.commuting_volume.get((it.origin, it.destination), 0) * it.ratio_car * x[it.id]
         for it in data.itineraries
     ) / total_w
 
-    total_flux = data.commuting_volume["volume"].sum()
-    # prob += (
-    #     pulp.lpSum(
-    #         flux_dict.get((it.origin, it.destination), 0)
-    #         * (travel_matrix_car[node_ids.index(it.origin)]
-    #                             [node_ids.index(it.destination)]
-    #            / max(it.travel_time, 1))
-    #         * x[it.itinerary_id]
-    #         for it in itineraries
-    #     ) / total_flux
-    # )
-    obj_var = pulp.LpVariable("obj_wp", lowBound=0, upBound=1)
-    prob += pulp.lpSum(
-        data.population[node] * data.ratio_car
-    ) / total_flux
-    prob += obj_var == (
-        pulp.lpSum(flux_dict.get((it.origin, it.destination), 0)
-        * (travel_matrix_car[node_ids.index(it.origin)]
-                            [node_ids.index(it.destination)]
-           / max(it.travel_time, 1))
-        * x[it.itinerary_id]
-        for it in itineraries)
-     / total_flux
-    )
+    total_flux = sum(data.commuting_volume.values())
     
+    # --- contrainte (14) : feasibilité selon hubs/modes choisis ---
+    for it in data.itineraries:
+        for (l, m) in it.hubs_required, it.mode_seq:
+            prob += x[it.id] <= y[(l, m)]
+
+    # --- contrainte (15) : exactement un itinéraire choisi par connexion (i,j) ---
+    for (i, j) in od_pairs:
+        its_ij = [it for it in data.itineraries if it.origin == i and it.destination == j]
+        prob += pulp.lpSum(x[it.id] for it in its_ij) == 1
+
+    # --- contrainte (16) : places de parking ---
+    for l in data.hub_locations:
+        for m in data.modes:
+            demand = pulp.lpSum(
+                it.parking_demand.get((l, m), 0) * x[it.id] for it in data.itineraries
+            )
+            prob += demand <= u[(l, m)]
+
+    # --- contraintes (17)-(19) : coûts d'installation / budget ---
+    for l in data.hub_locations:
+        for m in data.modes:
+            prob += data.fixed_cost_hub * y[(l, m)] <= e[l]
+        prob += e[l] <= data.fixed_cost_hub
+
+    prob += pulp.lpSum(
+        e[l] + pulp.lpSum(data.fixed_cost_mode[m] * u[(l, m)] for m in data.modes)
+        for l in data.hub_locations
+    ) <= data.budget
+
+    # --- résolution ---
     solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s)
     prob.solve(solver)
 
@@ -182,6 +188,11 @@ def solve_workplace_model(data: WorkplaceProblemData , time_limit_s: int = 300):
     parking = {(l, m): pulp.value(u[(l, m)]) for (l, m) in u if pulp.value(u[(l, m)]) and pulp.value(u[(l, m)]) > 0}
     itineraries_used = [it.id for it in data.itineraries if pulp.value(x[it.id]) > 0.5]
 
+    
+    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s)
+    prob.solve(solver)
+
+    
     return {
         "status": pulp.LpStatus[prob.status],
         "objective": pulp.value(prob.objective),
