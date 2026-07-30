@@ -317,7 +317,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                     hubs_req = [(i, "cs"), (j, "cs")]
                     itineraries.append(WorkplaceItinerary(
                         origin=i, destination=j,
-                        mode_seq=["cs"],ratio_car = t_car/t,
+                        ratio_car = t_car/t,
                         hubs_required=[(i,"cs"),(j,"cs")],
                         travel_time=t, id=iid, 
                         parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
@@ -425,21 +425,14 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         (sink, dest_id) = self.parameterAsSink(
             parameters, self.OUTPUT, context, fields,
             QgsWkbTypes.NoGeometry)  #pas de géométrie : c'est une table pure
-        fields = make_wp_itinerary_fields()
-        for it in itineraries:
-            f = QgsFeature(fields)
-            f.setAttributes([
-                it.id, it.origin, it.destination, it.travel_time, it.ratio_car,
-                it.mode_seq,it.hubs_required,
-                _encode_parking_demand(it.parking_demand),
-            ])
-            sink.addFeature(f, QgsFeatureSink.FastInsert)
+        
         list_dict =[]
         for it in iti_finaux:
-            list_dict.append({"id":iti.id, "origin": iti.origin,
-                              "destination": iti.destination, "travel_time": iti.travel_time,
-                              "ratio_car": iti.ratio_car, "mode_seq": iti.mode_seq,
-                              "hubs_required": iti.hubs_required,
+            list_dict.append({"id":iti_finaux.id, "origin": iti_finaux.origin,
+                              "destination": iti_finaux.destination, 
+                              "travel_time": iti_finaux.travel_time,
+                              "ratio_car": iti_finaux.ratio_car, 
+                              "hubs_required": iti_finaux.hubs_required,
                               })
         write_wp_itineraries_to_sink(iti_finaux, sink)
         return {self.OUTPUT: dest_id}
