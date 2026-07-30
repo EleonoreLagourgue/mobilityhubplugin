@@ -308,13 +308,16 @@ def read_wp_itineraries_from_source(feedback,source):
     return itineraries
 
 
-def build_workplace_problem_data(feedback,hubs_src, itineraries_src, od_gdf,
+def build_workplace_problem_data(feedback,hubs_src, itineraries_src,nodes_src, od_gdf,
                                     modes=None, fixed_cost_hub=1000.0, fixed_cost_mode=None, budget=0,
-                                    hub_id_field="fid",
+                                    hub_id_field="fid",node_id_field="code_insee",
                                     od_origin_field="origine_id", od_dest_field="destination_id",
                                     od_volume_field="volume"):
     #A mettre en paramètres
-    
+    od_gdf[od_origin_field] = "pop_" + od_gdf[od_origin_field].astype(str)
+    od_gdf[od_dest_field] = "pop_" + od_gdf[od_dest_field].astype(str)
+
+
     commuting_volume = dict(zip(
     zip(od_gdf[od_origin_field], od_gdf[od_dest_field]),
     od_gdf[od_volume_field]
@@ -323,8 +326,13 @@ def build_workplace_problem_data(feedback,hubs_src, itineraries_src, od_gdf,
         modes = get_available_modes(feedback,itineraries_src, extra_modes=["pt"])
     fixed_cost_mode = fixed_cost_mode or {}
     fixed_cost_mode = {m: fixed_cost_mode.get(m, 0.0) for m in modes}
-    hub_locations = [f[hub_id_field] for f in hubs_src.getFeatures()]
+    hub_locations = [f"hub_{f[hub_id_field]}" for f in hubs_src.getFeatures()]
+
+    node = [f"pop_{f[node_id_field]}" for f in nodes_src.getFeatures()]
+
     itineraries = read_wp_itineraries_from_source(feedback,itineraries_src)
+    hub_locations.extend(node)
+    feedback.pushInfo(f"Hubs détectés : {hub_locations}")
 
     return WorkplaceProblemData(
         commuting_volume=commuting_volume,

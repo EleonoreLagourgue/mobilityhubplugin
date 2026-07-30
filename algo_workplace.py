@@ -74,7 +74,7 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
         itineraries_file = self.parameterAsFile(parameters, self.ITINERAIRES, context)
         budget = self.parameterAsDouble(parameters, self.BUDGET, context)#float
         
-        
+        #id node, hubs à remettre en params
         #od : origine_id, destination_id, volume => faire une fonction formatage
         od = pd.read_csv(od_path,  sep=",", index_col=0)
         feedback.pushInfo(f"Colonnes lues : {od.columns.tolist()}")
@@ -88,15 +88,18 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
 
         feedback.pushInfo("Construction des data...")
         data = build_workplace_problem_data(feedback,
-            hubs_src, itineraries_src, od,
+            hubs_src, itineraries_src, nodes_src, od,
             fixed_cost_hub=1000.0,
             fixed_cost_mode={"bs": 300.0, "cs": 7500.0, "pt": 0.0},
             budget=budget,
         )
         feedback.pushInfo(f"Modes détectés : {data.modes}")
+        feedback.pushInfo(f"Hubs détectés : {data.hub_locations}")
+
         feedback.pushInfo(f"{len(data.itineraries)} itinéraires potentiels générés. Résolution du MIP...")
-        result = solve_workplace_model(data, time_limit_s=300)
-        feedback.pushInfo(f"Statut : {result['status']} — accessibilité obtenue : {result['objective']:.3f}")
+        result = solve_workplace_model(feedback,data, time_limit_s=300)
+        feedback.pushInfo(f"Statut : {result['status']}")
+        feedback.pushInfo(f"Accessibilité obtenue : {result['objective']:.3f}")
 
         fields = QgsFields()
         fields.append(QgsField("hub_id", QVariant.String))
@@ -106,7 +109,9 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
             parameters, self.OUTPUT, context, fields, QgsWkbTypes.Point, hubs_src.sourceCrs()
         )
 
-        hub_features = {f["id"]: f for f in hubs_src.getFeatures()}
+        hub_features = {f"hub_{f['fid']}": f for f in hubs_src.getFeatures()}
+        node_features = {f"hub_{f['code_insee']}": f for f in nodes_src.getFeatures()}
+        hub_features.update(node_features)
         for (hub_id, mode) in result["hubs"]:
             src_feat = hub_features.get(hub_id)
             if src_feat is None:

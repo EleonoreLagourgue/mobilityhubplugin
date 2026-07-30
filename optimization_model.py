@@ -128,7 +128,7 @@ def solve_poi_model(data: ProblemData, time_limit_s: int = 300):
         "itineraries_used": itineraries_used,
     }
 
-def solve_workplace_model(data: WorkplaceProblemData , time_limit_s: int = 300):
+def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: int = 300):
     prob = pulp.LpProblem("workplace_accessibility", pulp.LpMaximize)
     y = {(l, m): pulp.LpVariable(f"y_{l}_{m}", cat="Binary")
          for l in data.hub_locations for m in data.modes}
@@ -139,18 +139,30 @@ def solve_workplace_model(data: WorkplaceProblemData , time_limit_s: int = 300):
     x = {it.id: pulp.LpVariable(f"x_{it.id}", cat="Binary") for it in data.itineraries}
 
     od_pairs = {(it.origin, it.destination) for it in data.itineraries}
+    
 
     # --- objectif (13) ---
-    obj_var = pulp.LpVariable("obj_wp", lowBound=0, upBound=1)
+    #obj_var = pulp.LpVariable("obj_wp", lowBound=0, upBound=1)
+    feedback.pushInfo(f"Vérification dictionnaire : {type(data.commuting_volume)}")
+    feedback.pushInfo(f"Exemple clé commuting_volume : {list(data.commuting_volume.keys())[:3]}")
+    feedback.pushInfo(f"Types clé : {[(type(k[0]), type(k[1])) for k in list(data.commuting_volume.keys())[:3]]}")
+    feedback.pushInfo(f"Exemple od_pairs : {list(od_pairs)[:3]}")
+    feedback.pushInfo(f"Types od_pairs : {[(type(o[0]), type(o[1])) for o in list(od_pairs)[:3]]}")
+
+    for od in od_pairs:
+        feedback.pushInfo(f"Volume par od : {data.commuting_volume.get(od, 0)}")
 
     total_w = sum(data.commuting_volume.get(od, 0) for od in od_pairs) or 1.0
-    prob += pulp.lpSum(
+    feedback.pushInfo(f"Volume total : {total_w}")
+    
+    obj = pulp.lpSum(
         data.commuting_volume.get((it.origin, it.destination), 0) * it.ratio_car * x[it.id]
         for it in data.itineraries
     ) / total_w
+    prob += obj
 
-    total_flux = sum(data.commuting_volume.values())
-    
+    #total_flux = sum(data.commuting_volume.values())
+    feedback.pushInfo("Objectif ajouté")
     # --- contrainte (14) : feasibilité selon hubs/modes choisis ---
     for it in data.itineraries:
         for (l, m) in it.hubs_required:
@@ -179,22 +191,32 @@ def solve_workplace_model(data: WorkplaceProblemData , time_limit_s: int = 300):
         e[l] + pulp.lpSum(data.fixed_cost_mode[m] * u[(l, m)] for m in data.modes)
         for l in data.hub_locations
     ) <= data.budget
+    feedback.pushInfo("Contraintes ajoutées")
 
     # --- résolution ---
     solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s)
     prob.solve(solver)
+    feedback.pushInfo("Résolution faite")
+    status = pulp.LpStatus[prob.status]
+    feedback.pushInfo(str(status))
+    
+    #Vérif
+    for v in prob.variables():
+        #feedback.pushInfo(f"{v.name}, {v.varValue}")
+        if v.varValue is None:
+            feedback.pushInfo(f"Variable non résolue : {v.name}")
+    
 
     hubs_selected = {(l, m): pulp.value(y[(l, m)]) for (l, m) in y if pulp.value(y[(l, m)]) > 0.5}
     parking = {(l, m): pulp.value(u[(l, m)]) for (l, m) in u if pulp.value(u[(l, m)]) and pulp.value(u[(l, m)]) > 0}
     itineraries_used = [it.id for it in data.itineraries if pulp.value(x[it.id]) > 0.5]
 
-    
-    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s)
-    prob.solve(solver)
+    feedback.pushInfo(str(pulp.value(prob.objective)))
+
 
     
     return {
-        "status": pulp.LpStatus[prob.status],
+        "status": status,
         "objective": pulp.value(prob.objective),
         "hubs": hubs_selected,
         "parking_spaces": parking,
