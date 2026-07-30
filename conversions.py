@@ -143,7 +143,6 @@ POI_ITINERARY_FIELDS = [
     ("id", QVariant.String),
     ("node", QVariant.String),
     ("poi_category", QVariant.String),
-    ("mode_seq", QVariant.String),
     ("travel_time", QVariant.Double),
     ("hubs_required", QVariant.String), 
     ("parking_demand", QVariant.String),     # JSON
