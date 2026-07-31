@@ -54,6 +54,123 @@ from qgis.core import *
 
 from mobilityhubplugin.conversions import gdf_from_layer_arrow
 
+def get_route_between_stops(stop_a, stop_b, graph,edges_gdf, simpli =False):
+    # stop_a_coords = (lat, lon)
+    
+    #Trouver le nœud du graphe le plus proche de l'arrêt A et B
+    #Conversion WGS84 en Lambert-93 requise pour les points
+    node_a = ox.nearest_nodes(graph, stop_a.x, stop_a.y)
+    node_b = ox.nearest_nodes(graph, stop_b.x, stop_b.y)
+
+    SEUIL_DISTANCE_MAX_M = 2000  #à ajuster selon la densité du graphe
+    node_a_geom = Point(graph.nodes[node_a]['x'], graph.nodes[node_a]['y'])
+    node_b_geom = Point(graph.nodes[node_b]['x'], graph.nodes[node_b]['y'])
+    dist_a = stop_a.distance(node_a_geom)
+    dist_b = stop_b.distance(node_b_geom)
+    if dist_a > SEUIL_DISTANCE_MAX_M or dist_b > SEUIL_DISTANCE_MAX_M:
+        raise ValueError(
+            f"Nœud le plus proche trop éloigné de l'arrêt "
+            f"(dist_a={dist_a:.0f}m, dist_b={dist_b:.0f}m, seuil={SEUIL_DISTANCE_MAX_M}m)"
+        )
+
+    
+    #Calcul de plus court chemin
+    shortest_path = nx.shortest_path(graph, source=node_a, target=node_b, weight='length')
+    edges = list(zip(shortest_path[:-1], shortest_path[1:]))
+    
+    df_chemin = pd.DataFrame(edges, columns=['u', 'v'])
+    
+    #Jointure avec graphe initial pour vraiment récupérer géom
+    edges_gdf = edges_gdf.reset_index()
+    if 'length' in edges_gdf.columns:
+        critere_longueur = edges_gdf['length']
+    else:
+        critere_longueur = edges_gdf.geometry.length
+    edges_gdf = (
+        edges_gdf.assign(_longueur_tri=critere_longueur)
+        .sort_values('_longueur_tri')
+        .drop_duplicates(subset=['u', 'v'], keep='first')
+        .drop(columns='_longueur_tri')
+    )
+
+    #Simplification des Linestrings
+    if simpli:
+        edges_gdf["geometry"] = edges_gdf["geometry"].apply(lambda l: simplify(l,1))
+
+
+    df_lignes = edges_gdf.merge(df_chemin, left_on=['u', 'v'], right_on=['u', 'v'], how='inner')
+    
+    df_multipoint = df_lignes.copy()
+    df_multipoint["geometry"] = df_multipoint["geometry"].apply(lambda geom: MultiPoint(geom.coords))
+
+    #index_parts=True crée un multi-index pour suivre l'ordre du point dans la ligne
+    gdf_points = df_multipoint.explode(index_parts=True).reset_index()
+    
+    #Extraire les coordonnées X et Y (Longitude/Latitude) dans des colonnes dédiées
+    gdf_points = gdf_points.to_crs(4326)
+    gdf_points["shape_pt_lon"] = gdf_points["geometry"].x
+    gdf_points["shape_pt_lat"] = gdf_points["geometry"].y
+    
+    #Recréer la colonne de séquence (l'ordre des points pour le GTFS)
+    # On se base sur le deuxième niveau de l'ancien index généré par explode (level_1)
+    gdf_points["shape_pt_sequence"] = gdf_points["level_1"] + 1
+    
+    #On ne garde que la latitude et la longitude pour le fichier shapes
+    
+    gdf_points = gdf_points[["shape_pt_lon", "shape_pt_lat"]]
+    return gdf_points
+
+
+def findnearestnodeonnearestedge(Gr, X, Y):
+    """
+    source : https://stackoverflow.com/questions/68257014/how-to-find-nearest-node-along-nearest-edge
+
+    Parameters
+    ----------
+    Gr : graphe au format osmnx
+    X : TYPE
+        DESCRIPTION.
+    Y : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    nodeid : TYPE
+        DESCRIPTION.
+
+    """
+
+    edge,dist = ox.distance.nearest_edges(Gr, X,Y, return_dist=True)
+    u, v, key = edge
+    edge_data = Gr.edges[u, v, key]
+    edge_geom = edge_data["geometry"]
+
+    n1 = Gr.nodes[u]
+    n2 = Gr.nodes[v]
+
+    d1 = ox.distance.euclidean(Y,X, n1['y'], n1['x'])
+    d2 = ox.distance.euclidean(Y,X, n2['y'], n2['x'])
+    
+    point = Point(X, Y)
+    dist_along = edge_geom.project(point)
+
+    if d1 < d2:
+        nodeid = u
+        autre_node= v
+    else:
+        nodeid = v
+        autre_node= u
+    
+    node_point = Point(Gr.nodes[nodeid]['x'], Gr.nodes[nodeid]['y'])
+    dist_node_on_edge = edge_geom.project(node_point)
+
+
+    
+
+    return nodeid, dist, edge_geom, dist_along, dist_node_on_edge
+
+
+
 class CreaShapesAlgorithm(QgsProcessingAlgorithm):
     """
     This is an example algorithm that takes a vector layer and
@@ -135,9 +252,9 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
                 optional=False
             )
         )
-        self.addParameter(
-            QgsProcessingParameterFeatureSource(
-                self.TRAIN, "Chemin de fer (pour les trains)"))
+        # self.addParameter(
+        #     QgsProcessingParameterFeatureSource(
+        #         self.TRAIN, "Chemin de fer (pour les trains)"))
         self.addParameter(QgsProcessingParameterFeatureSource(self.NODES_TRAIN, 
                                                               "Nœuds du réseau ferré (points)",
                                                               [QgsProcessing.SourceType.TypeVectorPoint]))
@@ -145,9 +262,9 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
                                                               "Lignes du réseau ferré (lignes)",
                                                               [QgsProcessing.SourceType.TypeVectorLine]))
         
-        self.addParameter(QgsProcessingParameterField(self.WEIGHT_TRAIN, 
-                                              "Colonne poids réseau ferré",
-                                              parentLayerParameterName=self.RESEAU_TRAIN))
+        # self.addParameter(QgsProcessingParameterField(self.WEIGHT_TRAIN, 
+        #                                       "Colonne poids réseau ferré",
+        #                                       parentLayerParameterName=self.RESEAU_TRAIN))
         
         self.addParameter(QgsProcessingParameterFeatureSource(self.NODES_VOITURE, 
                                                               "Nœuds du réseau routier (points)",
@@ -156,9 +273,9 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
                                                               "Lignes du réseau routier (lignes)",
                                                               [QgsProcessing.SourceType.TypeVectorLine]))
         
-        self.addParameter(QgsProcessingParameterField(self.WEIGHT_VOITURE, 
-                                              "Colonne poids réseau routier",
-                                              parentLayerParameterName=self.RESEAU_VOITURE))
+        # self.addParameter(QgsProcessingParameterField(self.WEIGHT_VOITURE, 
+        #                                       "Colonne poids réseau routier",
+        #                                       parentLayerParameterName=self.RESEAU_VOITURE))
         
 
         # We add a feature sink in which to store our processed features (this
@@ -180,7 +297,6 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         
         lignes_layer = self.parameterAsVectorLayer(parameters, self.RESEAU_TRAIN, context)#QgsProcessingFeatureSource
         nodes_layer = self.parameterAsVectorLayer(parameters, self.NODES_TRAIN, context)#QgsProcessingFeatureSource
-        weight_train = self.parameterAsString(parameters, self.WEIGHT_TRAIN, context)
         
         
         nodes_train = gdf_from_layer_arrow(nodes_layer)
@@ -192,7 +308,6 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         
         lignes_layer = self.parameterAsVectorLayer(parameters, self.RESEAU_VOITURE, context)#QgsProcessingFeatureSource
         nodes_layer = self.parameterAsVectorLayer(parameters, self.NODES_VOITURE, context)#QgsProcessingFeatureSource
-        weight_voiture = self.parameterAsString(parameters, self.WEIGHT_VOITURE, context)
         
         
         nodes_voiture = gdf_from_layer_arrow(nodes_layer)
@@ -249,16 +364,15 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
 
         # iti["shape_id"] = iti["route_id"]+"_"+ iti["trip_headsign"] #test
         # trips["shape_id"]= trips["route_id"]+"_"+ trips["trip_headsign"]
-
-        shapes = gpd.GeoDataFrame(
-        iti, 
-        geometry=gpd.points_from_xy(iti.stop_lon, iti.stop_lat), 
-        crs="EPSG:4326")
-        shapes = shapes.to_crs(2154)
-
-        #Enlever les doublons
-        shapes = shapes.drop_duplicates(subset = ['shape_id', "stop_id", "geometry", "route_id"])
-        doublons = shapes.duplicated(subset=['shape_id', 'stop_sequence'], keep=False)
+        
+        df = iti.reindex(columns=['shape_id', 'stop_lat', 'stop_lon', 'stop_sequence','route_type'])
+        shapes = df[['shape_id', 'stop_lat', 'stop_lon', 'stop_sequence', "route_type"]].copy()
+        shapes.columns = ['shape_id', 'shape_pt_lat', 'shape_pt_lon', 'shape_pt_sequence', 'route_type']
+        print(f"Nombre de trips : {shapes['shape_id'].nunique()}")
+        
+        #Passage en GeoDataFrame
+        shapes_df = shapes.drop_duplicates()
+        doublons = shapes_df.duplicated(subset=['shape_id', 'shape_pt_sequence'], keep=False)
         
         if doublons.any():
             nb_shapes_touches = shapes.loc[doublons, 'shape_id'].nunique()
@@ -269,17 +383,133 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         else:
         
             feedback.pushInfo("OK : (shape_id, stop_sequence) est unique, pas de coordonnées ambiguës.")
+
+        shapes = gpd.GeoDataFrame(
+        shapes_df, 
+        geometry=gpd.points_from_xy(shapes_df.shape_pt_lon, shapes_df.shape_pt_lat), 
+        crs="EPSG:4326")
+        shapes = shapes.to_crs(2154)
+
+        #Enlever les doublons
+        shapes = shapes.drop_duplicates(subset = ['shape_id', "stop_id", "geometry", "route_id"])
+        
         # ----------- Préparation des GeoDataFrames d'arêtes ---------------------
         
-        all_shapes = []
-        groupes = list(shapes_gdf.groupby("shape_id"))
-        nb_groupes = len(groupes)
-        for i_grp, (shape_id, group) in enumerate(groupes):
-            if feedback.isCanceled():
-                feedback.pushWarning("Traitement annulé par l'utilisateur.")
-                break
-     
-            feedback.setProgress(100 * i_grp / max(nb_groupes, 1))
+        all_shape_points = []
+
+        for trip_id, group in shapes.groupby('shape_id'):
+            feedback.pushInfo("Shape id: ",trip_id)
+            print("Begin construction shapes")
+            
+            #Vérification du mode de transport
+            route_type = group['route_type'].iloc[0]
+            
+            if route_type == 2:
+                graphe_a_utiliser = G_train
+                edges_gdf = edges_train
+            elif route_type == 3:
+                graphe_a_utiliser = G_voiture
+                edges_gdf = edges_voiture
+            else:
+                #Permet d'éviter de planter si y a d'autres modes de transports
+                print(f"Mode de transport {route_type} non géré, saut de ce shape.")
+                continue
+            #On trie par séquence pour être sûr de l'ordre
+            group = group.sort_values('shape_pt_sequence')
+            sequence_idx = 1
+            for i in range( len(group) - 1): #range commmence à 0 mais stop_sequence commence à 1
+                stop_a = group[group["shape_pt_sequence"] == i-1]
+                stop_a = group.iloc[i]
+                stop_b = group.iloc[i + 1]
+                
+                if stop_a.equals(stop_b):
+                    continue
+                start_point = stop_a.geometry
+                end_point = stop_b.geometry
+                
+                #Calculer le tracé entre l'arrêt actuel et le suivant
+                try:
+                    geom_reproj = get_route_between_stops(start_point, end_point, graphe_a_utiliser,edges_gdf, simpli=False)
+                    lons = list(geom_reproj["shape_pt_lon"])
+                    lats = list(geom_reproj["shape_pt_lat"])
+
+                
+                except Exception as e:
+                    print(f"  [!] Itinéraire introuvable pour shape_id={stop_a['shape_id']} "
+                          f"entre séquence {i} et {i+1} ({e}). Repli sur ligne droite.")
+                    lons = [stop_a['shape_pt_lon'], stop_b['shape_pt_lon']]
+                    lats = [stop_a['shape_pt_lat'], stop_b['shape_pt_lat']]
+        
+        
+        
+        
+                is_last_pair = (i == len(group) - 2)
+                points_to_add = len(lons) if is_last_pair else len(lons) - 1
+                
+                for k in range(points_to_add):
+                    all_shape_points.append({
+                        'shape_id': stop_a['shape_id'],
+                        'shape_pt_lat': lats[k],
+                        'shape_pt_lon': lons[k],
+                        'shape_pt_sequence': sequence_idx
+                    })
+                    sequence_idx += 1
+            
+            
+        
+        #Génération du DataFrame final
+        shapes_temp = pd.DataFrame(all_shape_points)
+        
+        # On s'assure d'abord que les données sont regroupées par shape et 
+        # ordonnées selon l'ordre chronologique d'insertion 
+        shapes_temp = shapes_temp.sort_values(by=['shape_id', 'shape_pt_sequence']).reset_index(drop=True)
+        
+        
+        feedback.pushInfo(f"Nombre de lignes finales : {len(shapes_temp)}")
+            
+        #shapes_temp = shapes_temp.drop(columns = "route_type")
+
+        
+        trips["direction_id"] = trips["direction_id"].astype("Int64")
+        zip_path = path_gtfs
+        nom_fichier_txt = 'shapes.txt'
+        csv_buffer = io.StringIO()
+        shapes_temp.to_csv(csv_buffer, index = False)
+        
+        trips_buffer = io.StringIO()
+        trips.to_csv(trips_buffer, index=False)
+        # On peut l'ajouter directement depuis la mémoire
+        zip_temp_path = zip_path + ".tmp"
+        with zipfile.ZipFile(zip_path, 'r') as zin:
+            with zipfile.ZipFile(zip_temp_path, 'w', compression=zin.compression) as zout:
+                print(zin.namelist())
+                # 2. Parcourir tous les fichiers du ZIP d'origine
+                for item in zin.infolist():
+                    #Si c'est le fichier à remplacer, on écrit le nouveau contenu
+                    if item.filename == "trips.txt":
+                        zout.writestr("trips.txt",  trips_buffer.getvalue())
+                    elif item.filename == nom_fichier_txt:
+                        zout.writestr(nom_fichier_txt,  csv_buffer.getvalue())
+                    else:
+                        #Sinon, on copie le fichier d'origine tel quel
+                        zout.writestr(item, zin.read(item.filename))
+                if nom_fichier_txt not in zin.namelist():
+                    zout.writestr(nom_fichier_txt,  csv_buffer.getvalue())
+        # with zipfile.ZipFile(zip_path, mode='a') as archive:
+        #     # writestr permet d'ajouter un fichier à partir d'une chaîne de caractères
+        #     archive.writestr(nom_fichier_txt, csv_buffer.getvalue())
+        #     archive.writestr('trips.txt', trips_buffer.getvalue())
+        try:
+            os.replace(zip_temp_path, zip_path)
+            feedback.pushInfo(f"Le fichier GTFS a été mis à jour avec succès : {zip_path}")
+        except Exception as e:
+            feedback.pushInfo(f"Erreur lors du remplacement du fichier final : {e}")
+            # En cas d'échec (ex: fichier verrouillé), on nettoie le fichier temporaire
+            if os.path.exists(zip_temp_path):
+                os.remove(zip_temp_path)
+        feedback.pushInfo(f"Le fichier {nom_fichier_txt} a été ajouté avec succès à {zip_path}")
+        
+        
 
         
 
@@ -287,24 +517,24 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         # to uniquely identify the feature sink, and must be included in the
         # dictionary returned by the processAlgorithm function.
         
-        (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
-                context, train.fields(), train.wkbType(), train.sourceCrs())
+        # (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
+        #         context, train.fields(), train.wkbType(), train.sourceCrs())
 
-        # Compute the number of steps to display within the progress bar and
-        # get features from source
-        total = 100.0 / train.featureCount() if train.featureCount() else 0
-        features = train.getFeatures()
+        # # Compute the number of steps to display within the progress bar and
+        # # get features from source
+        # total = 100.0 / train.featureCount() if train.featureCount() else 0
+        # features = train.getFeatures()
 
-        for current, feature in enumerate(features):
-            # Stop the algorithm if cancel button has been clicked
-            if feedback.isCanceled():
-                break
+        # for current, feature in enumerate(features):
+        #     # Stop the algorithm if cancel button has been clicked
+        #     if feedback.isCanceled():
+        #         break
 
-            # Add a feature in the sink
-            sink.addFeature(feature, QgsFeatureSink.FastInsert)
+        #     # Add a feature in the sink
+        #     sink.addFeature(feature, QgsFeatureSink.FastInsert)
 
-            # Update the progress bar
-            feedback.setProgress(int(current * total))
+        #     # Update the progress bar
+        #     feedback.setProgress(int(current * total))
 
         # Return the results of the algorithm. In this case our only result is
         # the feature sink which contains the processed features, but some
@@ -314,64 +544,7 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         # or output names.
         return {}
 
-    def ajuster_segment(geom, point_ref, debut=True):
-        if geom.geom_type != 'LineString':
-            # Pas une ligne exploitable : on ne peut pas découper, on garde tel quel
-            # ou on la remplace par une ligne droite minimale si besoin
-            return geom
-        dist = geom.project(point_ref)
-        if debut:
-            return substring(geom, dist, geom.length)
-        else:
-            return substring(geom, 0, dist)
-    def findnearestnodeonnearestedge(Gr, X, Y):
-        """
-        source : https://stackoverflow.com/questions/68257014/how-to-find-nearest-node-along-nearest-edge
-
-        Parameters
-        ----------
-        Gr : graphe au format osmnx
-        X : TYPE
-            DESCRIPTION.
-        Y : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        nodeid : TYPE
-            DESCRIPTION.
-
-        """
-
-        edge,dist = ox.distance.nearest_edges(Gr, X,Y, return_dist=True)
-        u, v, key = edge
-        edge_data = Gr.edges[u, v, key]
-        edge_geom = edge_data["geometry"]
-
-        n1 = Gr.nodes[u]
-        n2 = Gr.nodes[v]
-
-        d1 = ox.distance.euclidean(Y,X, n1['y'], n1['x'])
-        d2 = ox.distance.euclidean(Y,X, n2['y'], n2['x'])
-        
-        point = Point(X, Y)
-        dist_along = edge_geom.project(point)
-
-        if d1 < d2:
-            nodeid = u
-            autre_node= v
-        else:
-            nodeid = v
-            autre_node= u
-        
-        node_point = Point(Gr.nodes[nodeid]['x'], Gr.nodes[nodeid]['y'])
-        dist_node_on_edge = edge_geom.project(node_point)
-
-
-        
-
-        return nodeid, dist, edge_geom, dist_along, dist_node_on_edge
-
+    
 
 
 
