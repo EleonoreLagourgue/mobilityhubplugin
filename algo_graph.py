@@ -63,18 +63,32 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
             ('Both directions', QgsVectorLayerDirector.DirectionBoth)])
         
         self.addParameter(QgsProcessingParameterVectorLayer(self.INPUT, self.tr("Réseau")))
-        self.addParameter(QgsProcessingParameterField(self.DIRECTION_FIELD, self.tr("Colonne direction"), parentLayerParameterName=self.INPUT))
-        self.addParameter(QgsProcessingParameterString(self.VALUE_FORWARD, self.tr("Sens direct")))
-        self.addParameter(QgsProcessingParameterString(self.VALUE_BACKWARD, self.tr("Sens inverse")))
-        self.addParameter(QgsProcessingParameterString(self.VALUE_BOTH, self.tr("Double sens")))
+        self.addParameter(QgsProcessingParameterField(self.DIRECTION_FIELD, 
+                                                      self.tr("Colonne direction"),
+                                                      parentLayerParameterName=self.INPUT,
+                                                      optional= True))
+        self.addParameter(QgsProcessingParameterString(self.VALUE_FORWARD, 
+                                                       self.tr("Sens direct (à remplir si la colonne de direction est renseignée)"),
+                                                       optional=True,
+                                                       defaultValue=None))
+        self.addParameter(QgsProcessingParameterString(self.VALUE_BACKWARD, 
+                                                       self.tr("Sens inverse (à remplir si la colonne de direction est renseignée)"),
+                                                       optional = True,
+                                                       defaultValue=None))
+        self.addParameter(QgsProcessingParameterString(self.VALUE_BOTH, 
+                                                       self.tr("Double sens (à remplir si la colonne de direction est renseignée)"),
+                                                       optional=True,
+                                                       defaultValue=None))
         self.addParameter(QgsProcessingParameterEnum(self.DEFAULT_DIRECTION,
                                                  self.tr("Direction par défaut"),
                                                  list(self.DIRECTIONS.keys()),
-                                                 defaultValue=2))
+                                                 optional = True,
+                                                 defaultValue=None))
 
         self.addParameter(QgsProcessingParameterField(self.SPEED_FIELD, 
                                                       self.tr("Colonne vitesse"), 
-                                                      parentLayerParameterName=self.INPUT))
+                                                      parentLayerParameterName=self.INPUT,
+                                                      optional=True))
         self.addParameter(QgsProcessingParameterString(self.DEFAULT_SPEED, self.tr("Vitesse par défaut"), defaultValue=50))
        
         
@@ -105,19 +119,29 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
         mode = self.parameterAsInt(parameters, self.MODE, context)
         colonne_vitesse =  self.parameterAsString(parameters, self.SPEED_FIELD, context)
         
-        
-        valeurs_reelles = set(layer.uniqueValues(layer.fields().indexOf(colonne_direction)))
+        if colonne_direction != "":
+            feedback.pushInfo("La colonne est renseignée")
+            feedback.pushInfo(f'{colonne_direction}')
 
-        for label, val in [("sens direct", value_forward),
-                            ("sens inverse", value_backward),
-                            ("double sens", value_both)]:
-            if val not in valeurs_reelles:
-                feedback.reportError(
-                    f"La valeur '{val}' ({label}) n'existe pas dans la colonne "
-                    f"'{colonne_direction}'. Valeurs disponibles : {sorted(valeurs_reelles)}",
-                    fatalError=True
-                )
-                return {}
+
+            valeurs_reelles = set(layer.uniqueValues(layer.fields().indexOf(colonne_direction)))
+    
+            for label, val in [("sens direct", value_forward),
+                                ("sens inverse", value_backward),
+                                ("double sens", value_both)]:
+                if val not in valeurs_reelles:
+                    feedback.reportError(
+                        f"La valeur '{val}' ({label}) n'existe pas dans la colonne "
+                        f"'{colonne_direction}'. Valeurs disponibles : {sorted(valeurs_reelles)}",
+                        fatalError=True
+                    )
+                    return {}
+        else:
+            colonne_direction =None
+            value_forward = None
+            value_backward = None
+            value_both = None
+            default_direction = None
         
         gdf_route = qgis_layer_to_gdf(layer)
         feedback.pushInfo(f"mode : {mode}")
