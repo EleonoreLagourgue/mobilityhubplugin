@@ -58,11 +58,58 @@ from collections import defaultdict
 
 from .optimization_model import  Itinerary,ProblemData
 from mobilityhubplugin.conversions import make_poi_itinerary_fields, write_poi_itineraries_to_sink
+from mobilityhubplugin.conversions import qgis_layer_to_gdf
 
 TRANSFER_TIME = 5   #min
 MAX_TRANSFERS = 2
 MODES = ["pt", "bs", "cs", "walk", "rs"]  # TC, vélo, voiture partagée
 
+def build_parking_demand(hubs_required, d_s, usage_rate):
+    return {(l, m): d_s * usage_rate[m] for (l, m) in hubs_required}
+def get_useful_hubs(i, j, hubs_potentiels, 
+                    mat_pt, mat_car, t_pt, t_max, min_improvement):
+    """
+    Ne retourne que les hubs h tels que :
+    - PT(i vers h) + CAR(h vers j) < t_pt * (1 - min_improvement)
+    - ou CAR(i vers h) + PT(h vers j) < t_pt * (1 - min_improvement)
+    Évite d'énumérer tous les hubs pour chaque paire O-D.
+    """
+    useful = []
+    for hub_id in hubs_potentiels:
+        print(hub_id)
+         
+        t1 = mat_pt[i][hub_id] + TRANSFER_TIME + mat_car[hub_id][j]
+        t2 = mat_car[i][hub_id] + TRANSFER_TIME + mat_pt[hub_id][j]
+        
+        if (t1 < t_pt * (1 - min_improvement) and t1 < t_max) or \
+           (t2 < t_pt * (1 - min_improvement) and t2 < t_max) :
+            useful.append(hub_id)
+    return useful
+def elimination_itineraires_domines(itineraires):
+    by_od = defaultdict(list)
+    for it in itineraires:
+        by_od[(it.origin, it.destination)].append(it)
+        #Construit dictionnaire avec comme clé origine& destination
+
+    kept = []
+    for od, itis in by_od.items():
+        its_sorted = itis.sort_values(by = ["travel_time"])
+        non_dominated = []
+        for cand in its_sorted:
+            dominated = False
+            req_c = set(cand.hubs_required)
+            for better in non_dominated:
+                req_b = set(better.hubs_required)
+                # cand dominé si ses requirements sont un surensemble de ceux de better
+                # ET better est plus rapide (garanti par le tri i.e. sorted)
+                if req_b.issubset(req_c):
+                    dominated = True
+                    break
+            if not dominated:
+                non_dominated.append(cand)
+        kept.extend(non_dominated)
+
+    return kept
 
 class BuildItinerariesPOI(QgsProcessingAlgorithm):
     POP = "POP"
@@ -144,29 +191,64 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
            self.OUTPUT, "Itinéraires potentiels (table)"))
 
     def processAlgorithm(self, parameters, context, feedback):
-        nodes_src = self.parameterAsSource(parameters, self.POP, context)#QgsProcessingFeatureSource
-        hubs_src = self.parameterAsSource(parameters, self.HUBS, context)#QgsProcessingFeatureSource
-        dest_src = self.parameterAsSource(parameters, self.DESTINATION, context)#QgsProcessingFeatureSource
+        nodes_layer = self.parameterAsSource(parameters, self.POP, context)#QgsProcessingFeatureSource
+        hubs_layer = self.parameterAsSource(parameters, self.HUBS, context)#QgsProcessingFeatureSource
+        dest_layer = self.parameterAsSource(parameters, self.DESTINATION, context)#QgsProcessingFeatureSource
         matrix_pt_path = self.parameterAsFile(parameters, self.MATRIXPT, context)
         matrix_b_path = self.parameterAsFile(parameters, self.MATRIXBIKE, context)
         matrix_car_path = self.parameterAsFile(parameters, self.MATRIXCAR, context)
         matrix_w_path = self.parameterAsFile(parameters, self.MATRIXWALK, context)
         max_ratio_vs_car = self.parameterAsDouble(parameters, self.MAXRATIO, context)
         min_improvement=self.parameterAsDouble(parameters, self.MINIMPRO, context)
+        
+        id_nodes = self.parameterAsString(parameters, self.IDPOP,context)
+        id_hubs = self.parameterAsString(parameters, self.IDHUB,context)
+        pop_column = self.parameterAsString(parameters, self.COLPOP,context)
+        id_dest = self.parameterAsString(parameters, self.IDDEST,context)
 
 
         feedback.pushInfo("Construction des itinéraires potentiels (routage + élimination des dominés)...")
-        matrix_pt = pd.read_csv(matrix_pt_path)
-        matrix_bike = pd.read_csv(matrix_b_path)
-        matrix_car = pd.read_csv(matrix_car_path)
-        matrix_walk = pd.read_csv(matrix_w_path)
+        #Import
+        matrix_pt = pd.read_csv(matrix_pt_path, index_col=0)
+        matrix_bike = pd.read_csv(matrix_b_path, index_col=0)
+        matrix_car = pd.read_csv(matrix_car_path, index_col=0)
+        matrix_walk = pd.read_csv(matrix_w_path, index_col=0)
+        feedback.pushInfo(f"{matrix_car.columns} : colonnes matrice voiture")
+
+        #Formatage
+        nodes_gdf = qgis_layer_to_gdf(nodes_layer)
+        hubs_gdf = qgis_layer_to_gdf(hubs_layer)
+        dest_gdf = qgis_layer_to_gdf(dest_layer)
+        
+        nodes_gdf[id_nodes] = "pop_" + nodes_gdf[id_nodes].astype(str)
+        nodes_gdf = nodes_gdf.set_index(id_nodes)
+        
+        dest_gdf[id_dest] = "dest_" + dest_gdf[id_dest].astype(str)
+        dest_gdf = dest_gdf.set_index(id_dest)
+        dest_gdf = dest_gdf["category_id"]
+        
+        hubs_gdf[id_hubs] = "hub_" + hubs_gdf[id_hubs].astype(str)
+        hubs_gdf = hubs_gdf.set_index(id_hubs)
+        
+        usage_rate = {"bs": 0.001, "cs": 0.001, "pt": 1.0}
 
         itineraries = []
         iid = 0 #compteur pour créer l'id de chaque itinéraire
-        
-        for i, orig in nodes_src.items():
-            for j, dest in dest_src.items():
-                if orig == dest:
+        pop = nodes_gdf[pop_column]
+        for row_a in nodes_gdf.itertuples():
+            i = row_a[0]
+            feedback.pushInfo(f"ID origine :{i}")
+            d_s = pop.loc[str(i)] if (str(i) in pop.index ) else 0.0
+            feedback.pushInfo(f"d_s : {d_s}")
+
+            for row_b in dest_gdf.itertuples():
+                j = row_b[0]
+                cate = row_b[1]
+                feedback.pushInfo(f"ID destination :{j}")
+
+                if i== j:
+                    feedback.pushInfo(f"Mêmes rows : {row_a}, \n{row_b}")
+                    #Normalement impossible
                     continue
 
                 t_car = matrix_car.loc[i, j] #temps en voiture
@@ -180,31 +262,39 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                 # =====================================================
                 itineraries.append(Itinerary(
                     origin=i, destination=j,
-                    mode_seq=["pt"], hubs_required=[],
-                    travel_time=t_pt, id=iid
+                     hubs_required=[],
+                    travel_time=t_pt, id=iid, parking_demand = {},
+                    poi_category = cate,
                 ))
                 iid += 1
-                
+                feedback.pushInfo(f"Ratio voiture / TC : {t_car/t_pt}")
+
                 # =====================================================
                 #          Unimodal mais que si meilleur que TC pur
                 # =====================================================
                 t = matrix_car[i][j] #voiture
                 if t < t_pt * (1 - min_improvement) and t < t_max:
+                    hubs_req = [(i, "cs"), (j, "cs")]
+
                     itineraries.append(Itinerary(
                         origin=i, destination=j,
-                        mode_seq=["cs"],
-                        hubs_required=[i,j],
-                        travel_time=t, id=iid
+                        hubs_required=hubs_req,
+                        travel_time=t, id=iid,
+                        parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
+                        poi_category = cate,
                     ))
                     iid += 1
                     
                 t = matrix_bike[i][j]#vélo
                 if t < t_pt * (1 - min_improvement) and t < t_max:
+                    hubs_req = [(i, "bs"), (j, "bs")]
+
                     itineraries.append(Itinerary(
-                        origin=orig, destination=dest,
-                        mode_seq=["bs"], 
-                        hubs_required=[i,j],
-                        travel_time=t, id=iid
+                        origin=i, destination=j,
+                        hubs_required=hubs_req,
+                        travel_time=t, id=iid,
+                        parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
+                        poi_category = cate,
                     ))
                     iid += 1
                         
@@ -212,38 +302,11 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                 #         Construction des itinéraires avec hubs
                 # ========================================================
                 
-                #Pied+TC
-                useful_hubs = self.get_useful_hubs(
-                    i, j, hubs_src, 
-                    matrix_pt, matrix_walk,
-                    t_pt, t_max, min_improvement
-                )
-                for hub_id in useful_hubs:
-                    walk_time = matrix_walk[hub_id][j]
-                    t1 = (matrix_pt[i][hub_id] + TRANSFER_TIME
-                          + walk_time)
-                    if walk_time < 20 and t1 < t_pt * (1 - min_improvement) and t1 < t_max: #A chercher
-                        itineraries.append(Itinerary(
-                            origin=i, destination=j,
-                            mode_seq=["pt", "walk"], 
-                            hubs_required=[],
-                            travel_time=t1, id=iid
-                        ))
-                        iid += 1
-                    walk_time = matrix_walk[i][hub_id]
-                    t2 = (walk_time + TRANSFER_TIME
-                          + matrix_pt[hub_id][j])
-                    if walk_time < 20 and t2 < t_pt * (1 - min_improvement) and t2 < t_max: #A chercher
-                        itineraries.append(Itinerary(
-                            origin=i, destination=j,
-                            mode_seq=["walk", "pt"], hubs_required=[],
-                            travel_time=t2, id=iid,
-                        ))
-                        iid += 1
+                
                 
                 #CS + TC
-                useful_hubs = self.get_useful_hubs(
-                        i, j, hubs_src, 
+                useful_hubs = get_useful_hubs(
+                        i, j, hubs_gdf, 
                         matrix_pt, matrix_car,
                         t_pt, t_max, min_improvement
                     )
@@ -251,27 +314,34 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                     t1 = (matrix_pt[i][hub_id] + TRANSFER_TIME
                           + matrix_car[hub_id][j])
                     if t1 < t_pt * (1 - min_improvement) and t1 < t_max:
+                        hubs_req = [(hub_id, "cs"), (j, "cs")]
+
                         itineraries.append(Itinerary(
                             origin=i, destination=j,
-                            mode_seq=["pt", "cs"],
-                            hubs_required=[(hub_id, "cs")],
-                            travel_time=t1, time_car = t_car, itinerary_id=iid
+                            hubs_required=hubs_req,
+                            travel_time=t1,  id=iid,
+                            parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
+                            poi_category = cate,
                         ))
                         iid += 1
                     # Mode à demande jusqu'au hub, puis TC
                     t2 = (matrix_car[i][hub_id] + TRANSFER_TIME
                           + matrix_pt[hub_id][j])
                     if t2 < t_pt * (1 - min_improvement) and t2 < t_max:
+                        hubs_req = [(hub_id, "cs"), (i, "cs")]
                         itineraries.append(Itinerary(
-                            origin=orig, destination=dest,
+                            origin=i, destination=j,
                             mode_seq=["cs", "pt"],
-                            hubs_required=[(hub_id, "cs")],
-                            travel_time=t2,  time_car = t_car,itinerary_id=iid
+                            hubs_required=hubs_req,
+                            travel_time=t2,  id=iid,
+                            parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
+                            poi_category = cate,
                         ))
                         iid += 1
+                
                 #BS + TC
-                useful_hubs = self.get_useful_hubs(
-                        i, j, hubs_src, 
+                useful_hubs = get_useful_hubs(
+                        i, j, hubs_gdf, 
                         matrix_pt, matrix_bike,
                         t_pt, t_max, min_improvement
                     )
@@ -279,26 +349,32 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                     t1 = (matrix_pt[i][hub_id] + TRANSFER_TIME
                           + matrix_bike[hub_id][j])
                     if t1 < t_pt * (1 - min_improvement) and t1 < t_max:
+                        hubs_req = [(hub_id, "bs"), (j, "bs")]
+
                         itineraries.append(Itinerary(
                             origin=i, destination=j,
-                            mode_seq=["pt", "cs"],
-                            hubs_required=[(hub_id, "cs")],
-                            travel_time=t1, time_car = t_car, itinerary_id=iid
+                            hubs_required=hubs_req,
+                            travel_time=t1,  id=iid,
+                            parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
+                            poi_category = cate,
                         ))
                         iid += 1
                     # Mode à demande jusqu'au hub, puis TC
                     t2 = (matrix_bike[i][hub_id] + TRANSFER_TIME
                           + matrix_pt[hub_id][j])
                     if t2 < t_pt * (1 - min_improvement) and t2 < t_max:
+                        hubs_req = [(hub_id, "bs"), (i, "bs")]
+
                         itineraries.append(Itinerary(
                             origin=i, destination=j,
-                            mode_seq=["cs", "pt"],
-                            hubs_required=[(hub_id, "cs")],
-                            travel_time=t2,  time_car = t_car,itinerary_id=iid
+                            hubs_required=hubs_req,
+                            travel_time=t2,  id=iid,
+                            parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
+                            poi_category = cate,
                         ))
                         iid += 1
                         
-        iti_finaux =self.elimination_itineraires_domines(itineraries)
+        iti_finaux = elimination_itineraires_domines(itineraries)
         #nodes_src, hubs_src, pois_src, threshold, budget, feedback
        
         feedback.pushInfo(f"{len(iti_finaux)} itinéraires potentiels générés. Résolution du MIP...")
@@ -314,47 +390,4 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         return {self.OUTPUT: dest_id}
     
     
-    def get_useful_hubs(i, j, hubs_potentiels, 
-                        mat_pt, mat_car, t_pt, t_max, min_improvement):
-        """
-        Ne retourne que les hubs h tels que :
-        - PT(i vers h) + CAR(h vers j) < t_pt * (1 - min_improvement)
-        - ou CAR(i vers h) + PT(h vers j) < t_pt * (1 - min_improvement)
-        Évite d'énumérer tous les hubs pour chaque paire O-D.
-        """
-        useful = []
-        for hub_id in hubs_potentiels:
-            print(hub_id)
-             
-            t1 = mat_pt[i][hub_id] + TRANSFER_TIME + mat_car[hub_id][j]
-            t2 = mat_car[i][hub_id] + TRANSFER_TIME + mat_pt[hub_id][j]
-            
-            if (t1 < t_pt * (1 - min_improvement) and t1 < t_max) or \
-               (t2 < t_pt * (1 - min_improvement) and t2 < t_max) :
-                useful.append(hub_id)
-        return useful
-    def elimination_itineraires_domines(itineraires):
-        by_od = defaultdict(list)
-        for it in itineraires:
-            by_od[(it.origin, it.destination)].append(it)
-            #Construit dictionnaire avec comme clé origine& destination
-
-        kept = []
-        for od, itis in by_od.items():
-            its_sorted = itis.sort_values(by = ["travel_time"])
-            non_dominated = []
-            for cand in its_sorted:
-                dominated = False
-                req_c = set(cand.hubs_required)
-                for better in non_dominated:
-                    req_b = set(better.hubs_required)
-                    # cand dominé si ses requirements sont un surensemble de ceux de better
-                    # ET better est plus rapide (garanti par le tri i.e. sorted)
-                    if req_b.issubset(req_c):
-                        dominated = True
-                        break
-                if not dominated:
-                    non_dominated.append(cand)
-            kept.extend(non_dominated)
-
-        return kept
+    

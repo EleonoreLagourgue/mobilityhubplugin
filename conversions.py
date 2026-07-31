@@ -8,6 +8,7 @@ from qgis.core import (
     QgsVectorLayer,
     QgsFeature, QgsGeometry, QgsFields, QgsField,
     QgsWkbTypes, QgsFeatureSink,
+    QgsVectorFileWriter, QgsProject,
 )
 from qgis.PyQt.QtCore import QVariant
 
@@ -20,11 +21,35 @@ from .optimization_model import (
 
 import geopandas as gpd
 from shapely import wkt as shapely_wkt
-
+import pyogrio
+import os
+import tempfile
 #%%
+
+	
+def gdf_from_layer_arrow(layer):
+    # SDSL2025 version
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        path = os.path.join(tmpdirname, "data.arrow")
+ 
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteFile 
+        options.layerName = 'data'
+        options.driverName = "arrow"
+         
+        QgsVectorFileWriter.writeAsVectorFormatV3(
+            layer, path, QgsProject.instance().transformContext(), options
+        )
+        
+        meta, table = pyogrio.read_arrow(path)
+        gdf = gpd.GeoDataFrame.from_arrow(table)
+ 
+    return gdf
+
 def qgis_layer_to_gdf(layer: QgsVectorLayer) -> gpd.GeoDataFrame:
-    """Convertit une QgsVectorLayer (n'importe quelle source : shapefile,
-    gpkg, couche mémoire, couche filtrée...) en GeoDataFrame."""
+    """Convertit une QgsVectorLayer en GeoDataFrame."""
+    # df = pd.DataFrame([feat.attributes() for feat in layer.getFeatures()],
+    #               columns=[field.name() for field in layer.fields()])
     if layer is None or not layer.isValid():
         raise ValueError("Couche QGIS invalide ou introuvable.")
 
@@ -139,9 +164,6 @@ def get_available_modes(feedback, itineraries_src, extra_modes=None):
     Parcourt la table d'itinéraires et extrait l'ensemble des modes
     effectivement utilisés dans hub_requirements (ex: 'bs', 'cs').
 
-    À utiliser à la place d'une liste de modes codée en dur : le modèle
-    n'a besoin de créer des variables y_lm/u_lm que pour les modes qui
-    apparaissent réellement dans au moins un itinéraire potentiel.
 
     - extra_modes : modes à toujours inclure même s'ils n'apparaissent pas
       dans hub_requirements (ex: 'pt', car les itinéraires 100% transport

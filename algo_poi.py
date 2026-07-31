@@ -50,10 +50,13 @@ from .optimization_model import ProblemData, solve_poi_model
 from .conversions import build_poi_problem_data
 
 class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
-    NODES = "NODES"
-    ITINERAIRES = "ITINERAIRES"
+    POP = "POP"
+    IDPOP = "IDPOP"
+    COLPOP = "COLPOP"
     HUBS = "HUBS"
-    POIS = "POIS"
+    IDHUB = "IDHUB"
+    DESTINATION = "DESTINATION"
+    IDDEST ="IDDEST"
     POICATEGORY = "POICATEGORY"
     POITRAVEL = "POITRAVEL"
 
@@ -77,12 +80,25 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
         return "mobility_hub"
 
     def initAlgorithm(self, config=None):
-        self.addParameter(QgsProcessingParameterFeatureSource(self.NODES, 
+        self.addParameter(QgsProcessingParameterFeatureSource(self.POP, 
                                                               "Nœuds de population (points)"))
+        self.addParameter(QgsProcessingParameterField(self.COLPOP, 
+                                                      "Colonne id pour la couche de population",
+                                                      parentLayerParameterName=self.POP))
+        self.addParameter(QgsProcessingParameterField(self.IDPOP, 
+                                                      "Colonne population pour la couche de population",
+                                                      parentLayerParameterName=self.POP))
         self.addParameter(QgsProcessingParameterFeatureSource(self.HUBS, 
                                                               "Hubs candidats (points)"))
+        self.addParameter(QgsProcessingParameterField(self.IDHUB, 
+                                                      "Colonne id pour la couche des hubs",
+                                                      parentLayerParameterName=self.HUBS))
         self.addParameter(QgsProcessingParameterFeatureSource(self.POIS, 
                                                               "Points d'intérêt (points, avec champ 'category')"))
+        self.addParameter(QgsProcessingParameterField(self.IDDEST, 
+                                              "Colonne id pour la couche de destination",
+                                              parentLayerParameterName=self.DESTINATION,
+                                              ))
         self.addParameter(QgsProcessingParameterField(self.POICATEGORY,
                                                               "Colonne de catégorie des services",
                                                               parentLayerParameterName = self.POIS))

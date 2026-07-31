@@ -359,7 +359,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                         itineraries.append(WorkplaceItinerary(
                             origin=i, destination=j,
                             hubs_required=hubs_req,ratio_car = t_car/t1,
-                            travel_time=t1, time_car = t_car, id=iid,
+                            travel_time=t1,  id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
 
                         ))
@@ -374,11 +374,12 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                             origin=i, destination=j,
 
                             hubs_required=hubs_req,ratio_car = t_car/t2,
-                            travel_time=t2,  time_car = t_car,id=iid,
+                            travel_time=t2,  id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
 
                         ))
                         iid += 1
+                        
                 #BS + TC
                 useful_hubs = get_useful_hubs(
                         i, j, hubs_gdf, 
@@ -394,7 +395,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                         itineraries.append(WorkplaceItinerary(
                             origin=i, destination=j,
                             hubs_required=hubs_req,ratio_car = t_car/t1,
-                            travel_time=t1, time_car = t_car, id=iid,
+                            travel_time=t1,  id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
 
                         ))
@@ -408,7 +409,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                         itineraries.append(WorkplaceItinerary(
                             origin=i, destination=j,
                             hubs_required=hubs_req,ratio_car = t_car/t2,
-                            travel_time=t2,  time_car = t_car,id=iid,
+                            travel_time=t2,  id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
 
                         ))
