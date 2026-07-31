@@ -44,14 +44,15 @@ import os
 import io
 import gc
 
-from qgis.core import *
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessing,
                        QgsFeatureSink,
                        QgsProcessingAlgorithm,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink)
+from qgis.core import *
 
+from mobilityhubplugin.conversions import gdf_from_layer_arrow
 
 class CreaShapesAlgorithm(QgsProcessingAlgorithm):
     """
@@ -72,8 +73,14 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
     # calling from the QGIS console.
     
     REP_GTFS = "REP_GTFS"
-    TRAIN = 'TRAIN'
-    ROUTE = 'ROUTE'
+    NODES_TRAIN = "NODES_TRAIN"
+    RESEAU_TRAIN = "RESEAU_TRAIN"
+    WEIGHT_TRAIN = "WEIGHT_TRAIN"
+    
+    NODES_VOITURE = "NODES_VOITURE"
+    RESEAU_VOITURE = "RESEAU_VOITURE"
+    WEIGHT_VOITURE = "WEIGHT_VOITURE"
+  
     OUTPUT = 'OUTPUT'
     
     
@@ -131,14 +138,28 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.TRAIN, "Chemin de fer (pour les trains)"))
-
-        self.addParameter(
-            QgsProcessingParameterFeatureSource(
-                self.ROUTE,
-                self.tr('Routes (pour les cars)'),
-                [QgsProcessing.TypeVectorAnyGeometry]
-            )
-        )
+        self.addParameter(QgsProcessingParameterFeatureSource(self.NODES_TRAIN, 
+                                                              "Nœuds du réseau ferré (points)",
+                                                              [QgsProcessing.SourceType.TypeVectorPoint]))
+        self.addParameter(QgsProcessingParameterFeatureSource(self.RESEAU_TRAIN, 
+                                                              "Lignes du réseau ferré (lignes)",
+                                                              [QgsProcessing.SourceType.TypeVectorLine]))
+        
+        self.addParameter(QgsProcessingParameterField(self.WEIGHT_TRAIN, 
+                                              "Colonne poids réseau ferré",
+                                              parentLayerParameterName=self.RESEAU_TRAIN))
+        
+        self.addParameter(QgsProcessingParameterFeatureSource(self.NODES_VOITURE, 
+                                                              "Nœuds du réseau routier (points)",
+                                                              [QgsProcessing.SourceType.TypeVectorPoint]))
+        self.addParameter(QgsProcessingParameterFeatureSource(self.RESEAU_VOITURE, 
+                                                              "Lignes du réseau routier (lignes)",
+                                                              [QgsProcessing.SourceType.TypeVectorLine]))
+        
+        self.addParameter(QgsProcessingParameterField(self.WEIGHT_VOITURE, 
+                                              "Colonne poids réseau routier",
+                                              parentLayerParameterName=self.RESEAU_VOITURE))
+        
 
         # We add a feature sink in which to store our processed features (this
         # usually takes the form of a newly created vector layer when the
@@ -154,9 +175,32 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         """
         Here is where the processing itself takes place.
         """
-        train = self.parameterAsSource(parameters, self.TRAIN, context)
-        route = self.parameterAsSource(parameters, self.ROUTE, context)
+        
         zip_gtfs = self.parameterAsFile(parameters, self.REP_GTFS, context)
+        
+        lignes_layer = self.parameterAsVectorLayer(parameters, self.RESEAU_TRAIN, context)#QgsProcessingFeatureSource
+        nodes_layer = self.parameterAsVectorLayer(parameters, self.NODES_TRAIN, context)#QgsProcessingFeatureSource
+        weight_train = self.parameterAsString(parameters, self.WEIGHT_TRAIN, context)
+        
+        
+        nodes_train = gdf_from_layer_arrow(nodes_layer)
+        edges_train = gdf_from_layer_arrow(lignes_layer)
+        nodes_train = nodes_train.set_index("osmid")
+        edges_train = edges_train.set_index(["u", "v", "key"])
+        G_train = ox.graph_from_gdfs(nodes_train, edges_train)
+        
+        
+        lignes_layer = self.parameterAsVectorLayer(parameters, self.RESEAU_VOITURE, context)#QgsProcessingFeatureSource
+        nodes_layer = self.parameterAsVectorLayer(parameters, self.NODES_VOITURE, context)#QgsProcessingFeatureSource
+        weight_voiture = self.parameterAsString(parameters, self.WEIGHT_VOITURE, context)
+        
+        
+        nodes_voiture = gdf_from_layer_arrow(nodes_layer)
+        edges_voiture = gdf_from_layer_arrow(lignes_layer)
+        nodes_voiture = nodes_voiture.set_index("osmid")
+        edges_voiture = edges_voiture.set_index(["u", "v", "key"])
+        G_voiture = ox.graph_from_gdfs(nodes_voiture, edges_voiture)
+
 
         feed = ptg.load_feed(zip_gtfs)
         stop_times = feed.stop_times
@@ -226,9 +270,7 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         
             feedback.pushInfo("OK : (shape_id, stop_sequence) est unique, pas de coordonnées ambiguës.")
         # ----------- Préparation des GeoDataFrames d'arêtes ---------------------
-        edges_gdf_train = ox.graph_to_gdfs(graphe_train, nodes=False, edges=True).reset_index()
-        edges_gdf_route = ox.graph_to_gdfs(graphe_route, nodes=False, edges=True).reset_index()
-     
+        
         all_shapes = []
         groupes = list(shapes_gdf.groupby("shape_id"))
         nb_groupes = len(groupes)

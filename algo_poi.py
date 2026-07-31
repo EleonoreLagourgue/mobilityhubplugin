@@ -53,13 +53,16 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
     POP = "POP"
     IDPOP = "IDPOP"
     COLPOP = "COLPOP"
+    
     HUBS = "HUBS"
     IDHUB = "IDHUB"
+    
     DESTINATION = "DESTINATION"
     IDDEST ="IDDEST"
     POICATEGORY = "POICATEGORY"
     POITRAVEL = "POITRAVEL"
-
+    
+    ITINERAIRES= "ITINERAIRES"
     BUDGET = "BUDGET"
     THRESHOLD = "THRESHOLD"
     OUTPUT = "OUTPUT"
@@ -93,7 +96,7 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterField(self.IDHUB, 
                                                       "Colonne id pour la couche des hubs",
                                                       parentLayerParameterName=self.HUBS))
-        self.addParameter(QgsProcessingParameterFeatureSource(self.POIS, 
+        self.addParameter(QgsProcessingParameterFeatureSource(self.DESTINATION, 
                                                               "Points d'intérêt (points, avec champ 'category')"))
         self.addParameter(QgsProcessingParameterField(self.IDDEST, 
                                               "Colonne id pour la couche de destination",
@@ -101,10 +104,10 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
                                               ))
         self.addParameter(QgsProcessingParameterField(self.POICATEGORY,
                                                               "Colonne de catégorie des services",
-                                                              parentLayerParameterName = self.POIS))
+                                                              parentLayerParameterName = self.DESTINATION))
         self.addParameter(QgsProcessingParameterField(self.POITRAVEL, 
                                                        "Colonne de seuil de temps de trajet (min)",
-                                                       parentLayerParameterName = self.POIS))
+                                                       parentLayerParameterName = self.DESTINATION))
         self.addParameter(QgsProcessingParameterFile(self.ITINERAIRES, 
                                                      "Itinéraires potentiels"))
         self.addParameter(QgsProcessingParameterNumber(self.BUDGET, 
@@ -117,11 +120,11 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
     def processAlgorithm(self, parameters, context, feedback):
         nodes_src = self.parameterAsVectorLayer(parameters, self.NODES, context)#QgsProcessingFeatureSource
         hubs_src = self.parameterAsVectorLayer(parameters, self.HUBS, context)#QgsProcessingFeatureSource
-        pois_src = self.parameterAsVectorLayer(parameters, self.POIS, context)#QgsProcessingFeatureSource
+        pois_src = self.parameterAsVectorLayer(parameters, self.DESTINATION, context)#QgsProcessingFeatureSource
         itineraries_src = self.parameterAsSource(parameters, self.ITINERAIRES, context)
         budget = self.parameterAsDouble(parameters, self.BUDGET, context)#float
         category = self.parameterAsString(parameters, self.POICATEGORY, context)
-        colonne_travel = self.parameterAsString(parameters, self.POICATEGORY, context)
+        colonne_travel = self.parameterAsString(parameters, self.POITRAVEL, context)
 
         
         feedback.pushInfo(category)

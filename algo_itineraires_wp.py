@@ -60,7 +60,7 @@ from collections import defaultdict
 
 
 from .optimization_model import WorkplaceProblemData, WorkplaceItinerary
-from mobilityhubplugin.conversions import make_wp_itinerary_fields, write_wp_itineraries_to_sink,qgis_layer_to_gdf
+from mobilityhubplugin.conversions import make_wp_itinerary_fields, write_wp_itineraries_to_sink,gdf_from_layer_arrow
 
 
 
@@ -230,8 +230,8 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         feedback.pushInfo(f"{matrix_car.index} : index matrice voiture")
         feedback.pushInfo(f"{matrix_car.columns} : colonnes matrice voiture")
 
-        nodes_gdf = qgis_layer_to_gdf(nodes_layer)
-        hubs_gdf = qgis_layer_to_gdf(hubs_layer)
+        nodes_gdf = gdf_from_layer_arrow(nodes_layer)
+        hubs_gdf = gdf_from_layer_arrow(hubs_layer)
         nodes_gdf[id_nodes] = "pop_" + nodes_gdf[id_nodes].astype(str)
         nodes_gdf = nodes_gdf.set_index(id_nodes)
         hubs_gdf[id_hubs] = "hub_" + hubs_gdf[id_hubs].astype(str)

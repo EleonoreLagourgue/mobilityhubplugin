@@ -31,10 +31,11 @@ from qgis.utils import *
 
 from qgis import processing
 
-from mobilityhubplugin.conversions import (qgis_layer_to_gdf, 
+from mobilityhubplugin.conversions import ( 
                          gdf_geom_to_qgs_wkbtype,
                          gdf_to_qgsfields,
-                         write_gdf_to_sink)
+                         write_gdf_to_sink,
+                         gdf_from_layer_arrow)
 import osmnx as ox
 import networkx as nx
 import pandas as pd
@@ -280,12 +281,13 @@ class MatriceTemps(QgsProcessingAlgorithm):
         feedback.pushInfo("Construction de la matrice de temps ...")
         modes = ['Voiture', 'Piéton', 'Vélo','Train']
         
-        nodes = qgis_layer_to_gdf(nodes_layer)
-        edges = qgis_layer_to_gdf(lignes_layer)
+        nodes = gdf_from_layer_arrow(nodes_layer)
+        edges = gdf_from_layer_arrow(lignes_layer)
         nodes = nodes.set_index("osmid")
         edges = edges.set_index(["u", "v", "key"])
         G = ox.graph_from_gdfs(nodes, edges)
         
+        print(nodes.head())
         nom = modes[id_mode]
         feedback.pushInfo(nom)
 

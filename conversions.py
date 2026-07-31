@@ -24,6 +24,7 @@ from shapely import wkt as shapely_wkt
 import pyogrio
 import os
 import tempfile
+import pyarrow as pa
 #%%
 
 	
@@ -40,10 +41,21 @@ def gdf_from_layer_arrow(layer):
         QgsVectorFileWriter.writeAsVectorFormatV3(
             layer, path, QgsProject.instance().transformContext(), options
         )
-        
-        meta, table = pyogrio.read_arrow(path)
+        result = QgsVectorFileWriter.writeAsVectorFormatV3(
+        layer, path, QgsProject.instance().transformContext(), options
+    )
+        if result[0] != QgsVectorFileWriter.NoError:
+            raise RuntimeError(f"Écriture échouée : {result}")
+        print(os.path.getsize(path))
+        try:
+            with pa.memory_map(path, 'r') as source:
+                table = pa.ipc.open_file(source).read_all()
+        except pa.lib.ArrowInvalid:
+            # au cas où ce serait plutôt du format "stream"
+            with pa.memory_map(path, 'r') as source:
+                table = pa.ipc.open_stream(source).read_all()
+
         gdf = gpd.GeoDataFrame.from_arrow(table)
- 
     return gdf
 
 def qgis_layer_to_gdf(layer: QgsVectorLayer) -> gpd.GeoDataFrame:

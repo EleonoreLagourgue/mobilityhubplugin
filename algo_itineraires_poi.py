@@ -58,7 +58,7 @@ from collections import defaultdict
 
 from .optimization_model import  Itinerary,ProblemData
 from mobilityhubplugin.conversions import make_poi_itinerary_fields, write_poi_itineraries_to_sink
-from mobilityhubplugin.conversions import qgis_layer_to_gdf
+from mobilityhubplugin.conversions import gdf_from_layer_arrow
 
 TRANSFER_TIME = 5   #min
 MAX_TRANSFERS = 2
@@ -216,9 +216,9 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         feedback.pushInfo(f"{matrix_car.columns} : colonnes matrice voiture")
 
         #Formatage
-        nodes_gdf = qgis_layer_to_gdf(nodes_layer)
-        hubs_gdf = qgis_layer_to_gdf(hubs_layer)
-        dest_gdf = qgis_layer_to_gdf(dest_layer)
+        nodes_gdf = gdf_from_layer_arrow(nodes_layer)
+        hubs_gdf = gdf_from_layer_arrow(hubs_layer)
+        dest_gdf = gdf_from_layer_arrow(dest_layer)
         
         nodes_gdf[id_nodes] = "pop_" + nodes_gdf[id_nodes].astype(str)
         nodes_gdf = nodes_gdf.set_index(id_nodes)
