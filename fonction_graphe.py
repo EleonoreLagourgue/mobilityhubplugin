@@ -436,7 +436,16 @@ def ponderer_distance_pieton(graphe, colonne_vitesse):
         else:
             length = data.get("length")
         print(length)
+        
+        
+        if "grade" in data:
+            # z_depart = graphe.nodes[u]['elevation']
+            # z_arrivee = graphe.nodes[v]['elevation']
+            pente = data.get("grade",0)
+            vitesse_numerique = 6 * np.exp(-3.5*abs(pente+0.05)) #Fonction de Tobler
+        
         data["travel_time"] = length/(vitesse_numerique /3.6) #en secondes
+
         #On exclut les autoroutes et autres routes
         #non empruntables à pied
         if data.get("nature") in nature_a_eviter or data.get(colonne_vitesse,0) > 60 or (data.get("cpx_classement_administratif") in classement and data.get("urbain") == "false" ):

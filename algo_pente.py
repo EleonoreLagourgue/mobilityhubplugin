@@ -69,7 +69,7 @@ class AddGradeAlgorithm(QgsProcessingAlgorithm):
         return "road_network_grades"
  
     def displayName(self):
-        return self.tr("Ajouter la pente aux arêtes d'un graphe routier (MNT)")
+        return self.tr("Ajouter la pente aux lignes d'un réseau")
  
     def group(self):
         return self.tr("Réseau")
@@ -188,7 +188,7 @@ class AddGradeAlgorithm(QgsProcessingAlgorithm):
                     node_repr_point[key] = pt_dem
             feedback.setProgress(int(30 * i / total))
  
-        # ---- Passe 2 : échantillonner le MNT une seule fois par nœud ----
+        # ---- échantillonner le MNT une seule fois par nœud ----
         feedback.pushInfo(
             f"Étape 2/3 : échantillonnage du MNT sur {len(node_repr_point)} nœuds uniques..."
         )
@@ -221,7 +221,7 @@ class AddGradeAlgorithm(QgsProcessingAlgorithm):
             source.crs(),
         )
  
-        # ---- Passe 3 : calcul de la pente par arête ----
+        # ---- calcul de la pente par arête ----
         feedback.pushInfo("Étape 3/3 : calcul de la pente par tronçon...")
         n_missing_dem = 0
         for i, feat in enumerate(features):

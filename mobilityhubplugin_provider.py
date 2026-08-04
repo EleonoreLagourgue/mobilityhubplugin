@@ -40,6 +40,7 @@ from .algo_itineraires_wp  import BuildItinerariesWP
 from .algo_itineraires_poi import BuildItinerariesPOI
 from .algo_pente import AddGradeAlgorithm
 from.algo_od import FormateODmatrix
+from .algo_decoup_gtfs import DecoupeGTFSAlgorithm
 
 
 
@@ -71,6 +72,7 @@ class MobilityHubPluginProvider(QgsProcessingProvider):
         self.addAlgorithm(BuildItinerariesPOI())
         self.addAlgorithm(AddGradeAlgorithm())
         self.addAlgorithm(FormateODmatrix())
+        self.addAlgorithm(DecoupeGTFSAlgorithm())
 
 
         
