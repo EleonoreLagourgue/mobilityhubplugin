@@ -30,15 +30,17 @@ __copyright__ = '(C) 2026 by Eleonore Lagourgue'
 
 __revision__ = '$Format:%H$'
 
+#Python
 import datetime
 import partridge as ptg
 import geopandas as gpd
 import pandas as pd
-import osmnx as ox
-import networkx as nx
 import os
+from shapely import wkt
+import gc
+import zipfile
 
-
+#QGIS
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessing,
                        QgsFeatureSink,
@@ -51,7 +53,9 @@ from qgis.core import (QgsProcessing,
                        QgsPointXY,
     )
 from qgis.core import *
+import processing
 
+#Plugin
 from mobilityhubplugin.conversions import gdf_from_layer_arrow
 
 
@@ -139,21 +143,32 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
         )
         self.addParameter(
             QgsProcessingParameterFeatureSource( 
-                self.REP_GTFS,
+                self.EMPRISE,
                 self.tr("Couche d'emprise de la zone d'intérêt"),
                 optional=False
             )
         )
+        self.addParameter(
+            QgsProcessingParameterFileDestination(
+                self.OUTPUT_PATH,
+                self.tr('Chemin de sortie'),
+                fileFilter = "zip",
+                optional=False
+
+                
+            )
+        )
+        
     def processAlgorithm(self, parameters, context, feedback):
         """
         Here is where the processing itself takes place.
         """
         
         zip_gtfs = self.parameterAsFile(parameters, self.REP_GTFS, context)
-        
-        sortie=os.path.splitext(self.parameterAsFileOutput(parameters, self.SORTIE, context))[0]
+        #emprise = self.parameterasSource(parameters, self.EMPRISE, context)
+        sortie=os.path.splitext(self.parameterAsFileOutput(parameters, self.OUTPUT_PATH, context))[0]
 
-
+        feedback.pushInfo(zip_gtfs)
         #Reprojection
         # crsSrc = emprise.sourceCrs()
         # crsSrc = QgsCoordinateReferenceSystem("EPSG:2154")        
@@ -180,7 +195,7 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
                 df = getattr(feed, table).copy()
                 if df.empty:
                     continue
-                feed_dfs[table] = feed.df
+                feed_dfs[table] = df
                 
             except AttributeError:
                 # La table n'existe pas dans ce flux, on passe
@@ -203,9 +218,7 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
         
         filtered_stops_gdf = stops_gdf[stops_gdf.geometry.within(polygon_geom)]
         valid_stop_ids = set(filtered_stops_gdf['stop_id'])
-        filtered_stops_gdf = stops[stops.geometry.within(polygon)]
-        valid_stop_ids = set(filtered_stops_gdf['stop_id'])
-        
+      
         stop_times = feed_dfs["stop_times"]
         filtered_stop_times = stop_times[stop_times['stop_id'].isin(valid_stop_ids)]
         valid_trip_ids = set(filtered_stop_times['trip_id'])
@@ -253,6 +266,8 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
                 if not df.empty:
                     out_z.writestr(file_name, df.to_csv(index=False))
                     print(f"{file_name} écrit.")
+        gc.collect()
+
         return {'SORTIE': sortie}
 
 

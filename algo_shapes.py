@@ -513,35 +513,7 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
 
         
 
-        # Retrieve the feature source and sink. The 'dest_id' variable is used
-        # to uniquely identify the feature sink, and must be included in the
-        # dictionary returned by the processAlgorithm function.
         
-        # (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
-        #         context, train.fields(), train.wkbType(), train.sourceCrs())
-
-        # # Compute the number of steps to display within the progress bar and
-        # # get features from source
-        # total = 100.0 / train.featureCount() if train.featureCount() else 0
-        # features = train.getFeatures()
-
-        # for current, feature in enumerate(features):
-        #     # Stop the algorithm if cancel button has been clicked
-        #     if feedback.isCanceled():
-        #         break
-
-        #     # Add a feature in the sink
-        #     sink.addFeature(feature, QgsFeatureSink.FastInsert)
-
-        #     # Update the progress bar
-        #     feedback.setProgress(int(current * total))
-
-        # Return the results of the algorithm. In this case our only result is
-        # the feature sink which contains the processed features, but some
-        # algorithms may return multiple feature sinks, calculated numeric
-        # statistics, etc. These should all be included in the returned
-        # dictionary, with keys matching the feature corresponding parameter
-        # or output names.
         return {}
 
     
