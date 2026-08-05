@@ -391,15 +391,15 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         shapes = shapes.to_crs(2154)
 
         #Enlever les doublons
-        shapes = shapes.drop_duplicates(subset = ['shape_id', "stop_id", "geometry", "route_id"])
+        #shapes = shapes.drop_duplicates(subset = ['shape_id', "stop_id", "geometry", "route_id"])
         
         # ----------- Préparation des GeoDataFrames d'arêtes ---------------------
         
         all_shape_points = []
 
         for trip_id, group in shapes.groupby('shape_id'):
-            feedback.pushInfo("Shape id: ",trip_id)
-            print("Begin construction shapes")
+            feedback.pushInfo(f"Shape id: {trip_id}")
+            feedback.pushInfo("Begin construction shapes")
             
             #Vérification du mode de transport
             route_type = group['route_type'].iloc[0]
@@ -412,7 +412,7 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
                 edges_gdf = edges_voiture
             else:
                 #Permet d'éviter de planter si y a d'autres modes de transports
-                print(f"Mode de transport {route_type} non géré, saut de ce shape.")
+                feedback.pushInfo(f"Mode de transport {route_type} non géré, saut de ce shape.")
                 continue
             #On trie par séquence pour être sûr de l'ordre
             group = group.sort_values('shape_pt_sequence')
@@ -435,7 +435,7 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
 
                 
                 except Exception as e:
-                    print(f"  [!] Itinéraire introuvable pour shape_id={stop_a['shape_id']} "
+                    feedback.pushInfo(f"  [!] Itinéraire introuvable pour shape_id={stop_a['shape_id']} "
                           f"entre séquence {i} et {i+1} ({e}). Repli sur ligne droite.")
                     lons = [stop_a['shape_pt_lon'], stop_b['shape_pt_lon']]
                     lats = [stop_a['shape_pt_lat'], stop_b['shape_pt_lat']]
@@ -471,7 +471,7 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
 
         
         trips["direction_id"] = trips["direction_id"].astype("Int64")
-        zip_path = path_gtfs
+        zip_path = zip_gtfs
         nom_fichier_txt = 'shapes.txt'
         csv_buffer = io.StringIO()
         shapes_temp.to_csv(csv_buffer, index = False)
