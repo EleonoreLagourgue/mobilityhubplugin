@@ -56,7 +56,7 @@ from qgis.core import *
 import processing
 
 #Plugin
-from mobilityhubplugin.conversions import gdf_from_layer_arrow
+from mobilityhubplugin.conversions import  seconds_to_hms
 
 
 
@@ -253,7 +253,7 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
             feed_dfs['calendar_dates'] = feed_dfs['calendar_dates'][feed_dfs['calendar_dates']['service_id'].isin(valid_service_ids)]
 
         # --- ÉTAPE 6 : Filtrer les tracés géométriques (SHAPES) ---
-        if 'shapest' in feed_dfs:
+        if 'shapes' in feed_dfs:
             feed_dfs['shapes'] = feed_dfs['shapes'][feed_dfs['shapes']['shape_id'].isin(valid_shape_ids)]
 
         # --- ÉTAPE 7 : Filtrer les agences (AGENCY) ---
@@ -264,6 +264,17 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
         # il faut ré-enrichir la table stops pour inclure les arrêts hors-zone où ces trajets s'arrêtent.
         all_needed_stops = set(feed_dfs['stop_times']['stop_id'])
         feed_dfs['stops'] = stops[stops['stop_id'].isin(all_needed_stops)]
+        
+        
+        TIME_COLUMNS = {
+            "stop_times": ["arrival_time", "departure_time"],
+            "frequencies": ["start_time", "end_time"],
+        }
+        for table_name, cols in TIME_COLUMNS.items():
+            if table_name in feed_dfs:
+                for col in cols:
+                    if col in feed_dfs[table_name].columns:
+                        feed_dfs[table_name][col] = feed_dfs[table_name][col].apply(seconds_to_hms)
         
         with zipfile.ZipFile(sortie, 'w', zipfile.ZIP_DEFLATED) as out_z:
             for file_name, df in feed_dfs.items():

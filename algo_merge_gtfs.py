@@ -54,6 +54,7 @@ from qgis.core import (
 from qgis.analysis import QgsVectorLayerDirector
 from qgis.PyQt.QtCore import QVariant, QCoreApplication
 
+from mobilityhubplugin.conversions import  seconds_to_hms
 
 
 import pandas as pd
@@ -69,6 +70,8 @@ def load_and_prefix(zip_path, prefix, feedback):
     feed_dfs = {}
     
     for table in tables:
+        feedback.pushInfo(f"Analayse de la table {table} ")
+
         try:
             df = getattr(feed, table).copy()
             if df.empty:
@@ -167,6 +170,18 @@ class MergeGTFS(QgsProcessingAlgorithm):
             
             # Concaténation des lignes des deux DataFrames
             merged_feed[table] = pd.concat(dfs_to_concat, ignore_index=True)
+            
+            
+        TIME_COLUMNS = {
+            "stop_times": ["arrival_time", "departure_time"],
+            "frequencies": ["start_time", "end_time"],
+        }
+        for table_name, cols in TIME_COLUMNS.items():
+            if table_name in all_feeds_data:
+                for col in cols:
+                    if col in all_feeds_data[table_name].columns:
+                        all_feeds_data[table_name][col] = all_feeds_data[table_name][col].apply(seconds_to_hms)
+
         #Concaténer et sauvegarder dans le nouveau fichier ZIP
         with zipfile.ZipFile(sortie, 'w', zipfile.ZIP_DEFLATED) as out_z:
             for table_name, df in merged_feed.items():

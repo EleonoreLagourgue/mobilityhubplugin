@@ -140,7 +140,19 @@ def write_gdf_to_sink(gdf, sink):
         feat.setAttributes(attrs)
 
         sink.addFeature(feat)
-
+#%%GTFS
+def seconds_to_hms(val):
+    """Reconvertit les secondes (format interne Partridge) en HH:MM:SS."""
+    if pd.isna(val) or val == "":
+        return val
+    try:
+        total_seconds = int(float(val))
+    except (ValueError, TypeError):
+        return val  # déjà une chaîne HH:MM:SS ou valeur non numérique
+    h = total_seconds // 3600
+    m = (total_seconds % 3600) // 60
+    s = total_seconds % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
 #%%
 # ---------------------------------------------------------------------
 # Encodage : clé de tuple (l, m) -> chaîne "l|m" (JSON n'autorise que des
