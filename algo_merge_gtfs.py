@@ -37,6 +37,7 @@ from qgis.core import (
     QgsProcessing,
     QgsProcessingParameterVectorLayer,
     QgsProcessingParameterFeatureSource,
+    QgsProcessingParameterMultipleLayers,
     QgsProcessingParameterFile,
     QgsProcessingParameterFileDestination,
     QgsVectorLayer,
@@ -55,6 +56,37 @@ from qgis.PyQt.QtCore import QVariant, QCoreApplication
 
 
 
+import pandas as pd
+import zipfile
+import partridge as ptg
+
+def load_and_prefix(zip_path, prefix):
+    """Charge un GTFS avec Partridge et préfixe les identifiants clés"""
+    feed = ptg.load_feed(zip_path)
+    
+    # Liste des tables standards GTFS à extraire si elles existent
+    tables = ['agency', 'stops', 'routes', 'trips', 'stop_times', 'calendar', 'calendar_dates', 'transfers',"shapes"]
+    feed_dfs = {}
+    
+    for table in tables:
+        try:
+            df = getattr(feed, table).copy()
+            if df.empty:
+                continue
+                
+            # Colonnes d'identifiants à préfixer pour éviter les doublons entre bus et trains
+            id_cols = ['stop_id', 'parent_station', 'trip_id', 'route_id', 'service_id', 'agency_id']
+            for col in id_cols:
+                if col in df.columns:
+                    # On s'assure de ne préfixer que les valeurs non nulles
+                    df[col] = df[col].apply(lambda x: f"{prefix}{x}" if pd.notna(x) and x != '' else x)
+            
+            feed_dfs[table] = df
+        except AttributeError:
+            # La table n'existe pas dans ce flux
+            continue
+            
+    return feed_dfs
 
 class MergeGTFS(QgsProcessingAlgorithm):
 
@@ -70,12 +102,12 @@ class MergeGTFS(QgsProcessingAlgorithm):
     def tr(self, string):
         return QCoreApplication.translate('MergeGTFS', string)
     def initAlgorithm(self, config=None):
+        
         self.addParameter(
-            QgsProcessingParameterFile( 
+            QgsProcessingParameterMultipleLayers(
                 self.REP_GTFS,
-                self.tr('zip GTFS'),
-                behavior= QgsProcessingParameterFile.Folder,
-                optional=False
+                self.tr('Zip GTFS à concaténer'),
+                layerType= QgsProcessing.TypeFile
             )
         )
         
@@ -95,9 +127,44 @@ class MergeGTFS(QgsProcessingAlgorithm):
         Here is where the processing itself takes place.
         """
         
-        zip_gtfs = self.parameterAsFile(parameters, self.REP_GTFS, context)
+        source = self.parameterAsFileList(parameters, self.REP_GTFS, context)
         #emprise = self.parameterasSource(parameters, self.EMPRISE, context)
         sortie=(self.parameterAsFileOutput(parameters, self.OUTPUT_ZIP, context))
+        
+        all_feeds_data = []
+        liste_tables_trouvees = set()    
+        merged_feed ={}
+        #Liste des fichiers standards du GTFS à traiter
+        
+        
+        
+        for k,zip_path in enumerate(source):
+            prefix = f"{k+ 1}00000"
+            #feed = ptg.load_feed(zip_path, view={})
+            feed_data = load_and_prefix(zip_path, prefix)
+            all_feeds_data.append(feed_data)
+            liste_tables_trouvees.update(feed_data.keys())
+        
+        for table in liste_tables_trouvees:
+            dfs_to_concat = []
+            for feed_data in all_feeds_data:
+                if table in feed_data:
+                    dfs_to_concat.append(feed_data[table])
+            
+            
+            # Concaténation des lignes des deux DataFrames
+            merged_feed[table] = pd.concat(dfs_to_concat, ignore_index=True)
+        #Concaténer et sauvegarder dans le nouveau fichier ZIP
+        with zipfile.ZipFile(sortie, 'w', zipfile.ZIP_DEFLATED) as out_z:
+            for table_name, df in merged_feed.items():
+                file_name = f"{table_name}.txt"
+                # Conversion du DataFrame en chaîne de caractères CSV
+                csv_data = df.to_csv(index=False)
+                # Ajout direct dans le ZIP
+                out_z.writestr(file_name, csv_data)
+            
+                print(f"Table {file_name} fusionnée avec succès.")
+
 
 
 
