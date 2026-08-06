@@ -196,7 +196,9 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
             try:
                 df = getattr(feed, table).copy()
                 if df.empty:
-                    continue
+                    feedback.pushWarning(f"La table {table} est vide")
+
+                    #continue
                 feed_dfs[table] = df
                 
             except AttributeError:
@@ -266,7 +268,7 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
         with zipfile.ZipFile(sortie, 'w', zipfile.ZIP_DEFLATED) as out_z:
             for file_name, df in feed_dfs.items():
                 if not df.empty:
-                    out_z.writestr(file_name, df.to_csv(index=False))
+                    out_z.writestr(f"{file_name}.txt", df.to_csv(index=False))
                     print(f"{file_name} écrit.")
         gc.collect()
 

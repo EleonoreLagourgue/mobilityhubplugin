@@ -60,7 +60,7 @@ import pandas as pd
 import zipfile
 import partridge as ptg
 
-def load_and_prefix(zip_path, prefix):
+def load_and_prefix(zip_path, prefix, feedback):
     """Charge un GTFS avec Partridge et préfixe les identifiants clés"""
     feed = ptg.load_feed(zip_path)
     
@@ -72,6 +72,7 @@ def load_and_prefix(zip_path, prefix):
         try:
             df = getattr(feed, table).copy()
             if df.empty:
+                feedback.pushWarning(f"La table {table} est vide")
                 continue
                 
             # Colonnes d'identifiants à préfixer pour éviter les doublons entre bus et trains
@@ -82,7 +83,9 @@ def load_and_prefix(zip_path, prefix):
                     df[col] = df[col].apply(lambda x: f"{prefix}{x}" if pd.notna(x) and x != '' else x)
             
             feed_dfs[table] = df
+            feedback.pushInfo(f"La table {table} a été ajoutée")
         except AttributeError:
+            feedback.pushWarning(f"La table {table} n'a pas été trouvée dans {zip_path}")
             # La table n'existe pas dans ce flux
             continue
             
@@ -141,14 +144,23 @@ class MergeGTFS(QgsProcessingAlgorithm):
         
         for k,zip_path in enumerate(source):
             prefix = f"{k+ 1}00000"
+            feedback.pushInfo(str(prefix))
             #feed = ptg.load_feed(zip_path, view={})
-            feed_data = load_and_prefix(zip_path, prefix)
+            feed_data = load_and_prefix(zip_path, prefix, feedback)
+            feedback.pushInfo(str(feed_data))
+
             all_feeds_data.append(feed_data)
             liste_tables_trouvees.update(feed_data.keys())
+            feedback.pushInfo(str(liste_tables_trouvees))
+
         
         for table in liste_tables_trouvees:
+            feedback.pushInfo(table)
+
             dfs_to_concat = []
             for feed_data in all_feeds_data:
+                feedback.pushInfo(str(feed_data))
+
                 if table in feed_data:
                     dfs_to_concat.append(feed_data[table])
             
