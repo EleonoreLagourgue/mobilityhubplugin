@@ -69,7 +69,7 @@ from shapely import ops as sops
 from scipy.spatial import cKDTree
 from geopy.distance import distance
 from shapely.geometry import Point, Polygon, LineString
-
+import shapely
 SPEED = {
     'walk': 4 * 1000 / 3600,
     'bike': 15 * 1000 / 3600,
@@ -226,7 +226,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                 point_v = stops.loc[stops.stop_id == v, 'geometry'].values[0]
                 feedback.pushInfo(f"u : {str(point_u)}, v : {str(point_v)}")
 
-                length = distance((point_u.y, point_u.x), (point_v.y, point_v.x)).m
+                length = shapely.distance(point_u, point_v)
                 # Get geometry for the edge
                 try:
                     orig = geoms.project(point_u)
@@ -281,14 +281,15 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
 
          # Combine OSM and GTFS graphs
         G = nx.compose(G_osm, G_gtfs)
-
+        
+        k=1
         # Connect each GTFS stop to its nearest OSM node(s)
         for (stop_id, x, y), (dist, idx) in zip(gtfs_nodes, zip(*tree.query(gtfs_coords, k=k))):
             osm_node = osm_nodes.iloc[idx].name
             point_u = Point(y, x)
             point_v = Point(osm_nodes.iloc[idx].y, osm_nodes.iloc[idx].x)
 
-            length = distance(point_u, point_v)
+            length = distance(point_u, point_v).m
             travel_time = length / SPEED['transfer'] / 60
             G.add_edge(stop_id, osm_node, mode="transfer", length=length, travel_time=travel_time)
             G.add_edge(osm_node, stop_id, mode="transfer", length=length, travel_time=travel_time)
