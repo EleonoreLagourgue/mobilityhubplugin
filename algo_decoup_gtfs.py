@@ -166,9 +166,10 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
         
         zip_gtfs = self.parameterAsFile(parameters, self.REP_GTFS, context)
         #emprise = self.parameterasSource(parameters, self.EMPRISE, context)
-        sortie=(self.parameterAsFileOutput(parameters, self.OUTPUT_PATH, context))[0]
+        sortie=(self.parameterAsFileOutput(parameters, self.OUTPUT_PATH, context))
 
         feedback.pushInfo(zip_gtfs)
+        feedback.pushInfo(f"Chemin de sortie : {sortie}")
         #Reprojection
         # crsSrc = emprise.sourceCrs()
         # crsSrc = QgsCoordinateReferenceSystem("EPSG:2154")        
@@ -179,7 +180,7 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
         
         reprojected  = processing.run("native:reprojectlayer", {
             'INPUT':parameters["EMPRISE"],
-            'TARGET_CRS':QgsCoordinateReferenceSystem('EPSG:4326'),
+            'TARGET_CRS':crsDest,
             'CONVERT_CURVED_GEOMETRIES':False,
             'OUTPUT':'memory:'}, 
             context=context, feedback=feedback)['OUTPUT']
