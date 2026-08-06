@@ -94,6 +94,10 @@ def load_and_prefix(zip_path, prefix, feedback):
             
     return feed_dfs
 
+
+
+
+
 class MergeGTFS(QgsProcessingAlgorithm):
 
     REP_GTFS = "REP_GTFS"
@@ -150,7 +154,6 @@ class MergeGTFS(QgsProcessingAlgorithm):
             feedback.pushInfo(str(prefix))
             #feed = ptg.load_feed(zip_path, view={})
             feed_data = load_and_prefix(zip_path, prefix, feedback)
-            feedback.pushInfo(str(feed_data))
 
             all_feeds_data.append(feed_data)
             liste_tables_trouvees.update(feed_data.keys())
@@ -162,15 +165,14 @@ class MergeGTFS(QgsProcessingAlgorithm):
 
             dfs_to_concat = []
             for feed_data in all_feeds_data:
-                feedback.pushInfo(str(feed_data))
 
                 if table in feed_data:
                     dfs_to_concat.append(feed_data[table])
-            
-            
             # Concaténation des lignes des deux DataFrames
             merged_feed[table] = pd.concat(dfs_to_concat, ignore_index=True)
             
+        
+
             
         TIME_COLUMNS = {
             "stop_times": ["arrival_time", "departure_time"],
@@ -181,17 +183,39 @@ class MergeGTFS(QgsProcessingAlgorithm):
                 for col in cols:
                     if col in all_feeds_data[table_name].columns:
                         all_feeds_data[table_name][col] = all_feeds_data[table_name][col].apply(seconds_to_hms)
-
+        DATE_COLUMNS = {
+            "calendar": ["start_date", "end_date"],
+            "clanedar_dates": ["date"],
+        }
+        for table_name, cols in DATE_COLUMNS.items():
+            if table_name in all_feeds_data:
+                for col in cols:
+                    if col in all_feeds_data[table_name].columns:
+                        s = pd.to_datetime(all_feeds_data[table_name][col])
+                        all_feeds_data[table_name][col] = s.dt.strftime('%Y%m%d')
+       
         #Concaténer et sauvegarder dans le nouveau fichier ZIP
+        
+        feedback.pushInfo("Ecriture dans le zip...")
+
         with zipfile.ZipFile(sortie, 'w', zipfile.ZIP_DEFLATED) as out_z:
+            feedback.pushInfo(f" Rappel du chemin {sortie}...")
+
             for table_name, df in merged_feed.items():
+                feedback.pushInfo(f" Table en cours de traitement : {table_name}...")
+
                 file_name = f"{table_name}.txt"
                 # Conversion du DataFrame en chaîne de caractères CSV
                 csv_data = df.to_csv(index=False)
                 # Ajout direct dans le ZIP
                 out_z.writestr(file_name, csv_data)
+                feedback.pushInfo(f" Table traitée : {table_name}...")
+
             
-                print(f"Table {file_name} fusionnée avec succès.")
+        feedback.pushInfo(f"Table {file_name} fusionnée avec succès.")
+        
+        return {'SORTIE': sortie}
+
 
 
 

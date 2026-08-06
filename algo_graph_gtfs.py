@@ -71,7 +71,7 @@ from shapely import distance
 from shapely.geometry import Point, Polygon, LineString
 
 SPEED = {
-    'walk': 5 * 1000 / 3600,
+    'walk': 4 * 1000 / 3600,
     'bike': 15 * 1000 / 3600,
     'transfer': 5 * 1000 / 3600,
     'transit': 22 * 1000 / 3600
@@ -112,7 +112,7 @@ def compute_speed_from_stop_times(stop_sequence_df, stops_gdf):
         # Calcul de la distance
         pt_u = stops_gdf.loc[stops_gdf.stop_id == u['stop_id'], 'geometry'].values[0]
         pt_v = stops_gdf.loc[stops_gdf.stop_id == v['stop_id'], 'geometry'].values[0]
-        dist_m = distance((pt_u.y, pt_u.x), (pt_v.y, pt_v.x)).m
+        #dist_m = distance((pt_u.y, pt_u.x), (pt_v.y, pt_v.x)).m
 
 
         
@@ -121,6 +121,7 @@ def compute_speed_from_stop_times(stop_sequence_df, stops_gdf):
             'v': v['stop_id'],
             'travel_time_min': round(delta_minutes, 2)
         })
+    return results
     
 
 class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
@@ -160,16 +161,15 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
     
     
     def processAlgorithm(self, parameters, context, feedback):
-        zip_path = self.parameterasFile(parameters, self.INPUT, context)
+        zip_path = self.parameterAsFile(parameters, self.INPUT, context)
         li_layer = self.parameterAsVectorLayer(parameters, self.LI_PIETON, context)
         no_layer = self.parameterAsVectorLayer(parameters, self.NO_PIETON, context)
         
-        gdf_edges = qgis_layer_to_gdf(li_layer)
-        gdf_nodes= qgis_layer_to_gdf(no_layer)
-
-
-
-        G_osm = ox.graph_from_gdfs(gdf_nodes, gdf_edges)
+        edges = qgis_layer_to_gdf(li_layer)
+        nodes= qgis_layer_to_gdf(no_layer)
+        nodes = nodes.set_index("osmid")
+        edges = edges.set_index(["u", "v", "key"])
+        G_osm = ox.graph_from_gdfs(nodes, edges)
         
         
         #Load gtfs with partridge
@@ -182,7 +182,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         if hasattr(feed, 'shapes') and feed.shapes is not None and not feed.shapes.empty:
             shapes = feed.shapes
         else:
-            print("Attention: shapes.txt absent ou vide \n Construction des shapes ")
+            feedback.pushInfo("Attention: shapes.txt absent ou vide \n Construction des shapes ")
             #shapes = shape_selon_geom(gtfs)
         
 
@@ -197,9 +197,12 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
 
         # Ensure all shape geometries are LineString
         shapes['geometry'] = shapes['geometry'].apply( lambda geoms: geoms if isinstance(geoms, LineString) else LineString(geoms))
+        shapes_liees = shapes.merge(trips, on = "shape_id")
+        shapes_liees = shapes_liees.merge(routes, on = "route_id")
         
         shapes = shapes.set_index('shape_id').geometry
-         
+        
+
 
         # Create edges from trips, grouped by shape_id
         for shape_id, group in trips.groupby('shape_id'):
@@ -232,7 +235,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                         segment = LineString([point_u, point_v])
                 except:
                     segment = LineString([point_u, point_v])
-                length = compute_segment_length(segment)
+                length = segment.length
                 
                 delta_hours = seg['travel_time_min'] / 60
                 speed_kph = length / delta_hours if delta_hours > 0 else 22.0

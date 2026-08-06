@@ -18,7 +18,7 @@ from .optimization_model import (
     ProblemData, Itinerary, WorkplaceProblemData, WorkplaceItinerary,
 )
 
-
+import pandas as pd
 import geopandas as gpd
 from shapely import wkt as shapely_wkt
 import pyogrio

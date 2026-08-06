@@ -226,61 +226,13 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
         stop_times = feed_dfs["stop_times"]
         filtered_stop_times = stop_times[stop_times['stop_id'].isin(valid_stop_ids)]
         valid_trip_ids = set(filtered_stop_times['trip_id'])
+        feedback.pushInfo(f"{len(valid_trip_ids)} trips retenus dans le périmètre")
         
-        # Optionnel mais recommandé : On conserve l'INTÉGRALITÉ des arrêts pour les trips sélectionnés
-        # pour éviter de casser la continuité d'une ligne. Si vous voulez un découpage strict à la frontière,
-        # décommentez la ligne suivante :
-        # feed_dfs['stop_times'] = filtered_stop_times
-        feed_dfs['stop_times'] = stop_times[stop_times['trip_id'].isin(valid_trip_ids)]
-        print(f"Horaires (stop_times) conservés : {stop_times}")
+ 
         
         
-        trips_df = feed_dfs['trips']
-        feed_dfs['trips'] = trips_df[trips_df['trip_id'].isin(valid_trip_ids)]
-        valid_route_ids = set(feed_dfs['trips']['route_id'])
-        valid_service_ids = set(feed_dfs['trips']['service_id'])
-        valid_shape_ids = set(feed_dfs['trips']['shape_id'].dropna())
-
-        # --- ÉTAPE 4 : Filtrer les ROUTES ---
-        routes_df = feed_dfs['routes']
-        feed_dfs['routes'] = routes_df[routes_df['route_id'].isin(valid_route_ids)]
-        valid_agency_ids = set(feed_dfs['routes']['agency_id'].dropna())
-
-        # --- ÉTAPE 5 : Filtrer les calendriers (CALENDAR & CALENDAR_DATES) ---
-        if 'calendar' in feed_dfs:
-            feed_dfs['calendar'] = feed_dfs['calendar'][feed_dfs['calendar']['service_id'].isin(valid_service_ids)]
-        if 'calendar_dates' in feed_dfs:
-            feed_dfs['calendar_dates'] = feed_dfs['calendar_dates'][feed_dfs['calendar_dates']['service_id'].isin(valid_service_ids)]
-
-        # --- ÉTAPE 6 : Filtrer les tracés géométriques (SHAPES) ---
-        if 'shapes' in feed_dfs:
-            feed_dfs['shapes'] = feed_dfs['shapes'][feed_dfs['shapes']['shape_id'].isin(valid_shape_ids)]
-
-        # --- ÉTAPE 7 : Filtrer les agences (AGENCY) ---
-        if 'agency' in feed_dfs and len(valid_agency_ids) > 0:
-            feed_dfs['agency'] = feed_dfs['agency'][feed_dfs['agency']['agency_id'].isin(valid_agency_ids)]
-
-        # Si on a gardé l'intégralité des arrêts pour les trajets valides (option recommandée),
-        # il faut ré-enrichir la table stops pour inclure les arrêts hors-zone où ces trajets s'arrêtent.
-        all_needed_stops = set(feed_dfs['stop_times']['stop_id'])
-        feed_dfs['stops'] = stops[stops['stop_id'].isin(all_needed_stops)]
-        
-        
-        TIME_COLUMNS = {
-            "stop_times": ["arrival_time", "departure_time"],
-            "frequencies": ["start_time", "end_time"],
-        }
-        for table_name, cols in TIME_COLUMNS.items():
-            if table_name in feed_dfs:
-                for col in cols:
-                    if col in feed_dfs[table_name].columns:
-                        feed_dfs[table_name][col] = feed_dfs[table_name][col].apply(seconds_to_hms)
-        
-        with zipfile.ZipFile(sortie, 'w', zipfile.ZIP_DEFLATED) as out_z:
-            for file_name, df in feed_dfs.items():
-                if not df.empty:
-                    out_z.writestr(f"{file_name}.txt", df.to_csv(index=False))
-                    print(f"{file_name} écrit.")
+        view = {'trips.txt': {'trip_id': valid_trip_ids}}
+        ptg.extract_feed(zip_gtfs, sortie, view)
         gc.collect()
 
         return {'SORTIE': sortie}
