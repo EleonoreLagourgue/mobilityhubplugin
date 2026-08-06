@@ -67,7 +67,7 @@ import geopandas as gpd
 import partridge as ptg
 from shapely import ops as sops
 from scipy.spatial import cKDTree
-from shapely import distance
+from geopy.distance import distance
 from shapely.geometry import Point, Polygon, LineString
 
 SPEED = {
@@ -224,6 +224,8 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                 # Retrieve the coordinates of the two stops
                 point_u = stops.loc[stops.stop_id == u, 'geometry'].values[0]
                 point_v = stops.loc[stops.stop_id == v, 'geometry'].values[0]
+                feedback.pushInfo(f"u : {str(point_u)}, v : {str(point_v)}")
+
                 length = distance((point_u.y, point_u.x), (point_v.y, point_v.x)).m
                 # Get geometry for the edge
                 try:
@@ -254,7 +256,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
 
         # Set the graph's CRS based on the stops' coordinates
         if stops.crs is not None:
-            G.graph['crs'] = stops.crs()
+            G.graph['crs'] = stops.crs
         else:
             G.graph['crs'] = "EPSG:4326"
         
