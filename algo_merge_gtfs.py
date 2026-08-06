@@ -58,15 +58,15 @@ from qgis.PyQt.QtCore import QVariant, QCoreApplication
 
 class MergeGTFS(QgsProcessingAlgorithm):
 
-    INPUT = "INPUT"
+    REP_GTFS = "REP_GTFS"
     OUTPUT_ZIP = "OUTPUT_ZIP"
     def __init__(self):
         super().__init__()
     def name(self): return "merge_gtfs"
     def displayName(self): return "Concaténer des réseaux de transports en commun"
     def createInstance(self): return MergeGTFS()
-    def group(self): return "Réseau"
-    def groupId(self): return "reseau"
+    def group(self): return "Formatage préliminaire"
+    def groupId(self): return "formatage"
     def tr(self, string):
         return QCoreApplication.translate('MergeGTFS', string)
     def initAlgorithm(self, config=None):
@@ -81,7 +81,7 @@ class MergeGTFS(QgsProcessingAlgorithm):
         
         self.addParameter(
             QgsProcessingParameterFileDestination(
-                self.OUTPUT_PATH,
+                self.OUTPUT_ZIP,
                 self.tr('Chemin de sortie'),
                 fileFilter = "zip",
                 optional=False
@@ -89,6 +89,15 @@ class MergeGTFS(QgsProcessingAlgorithm):
                 
             )
         )
+        
+    def processAlgorithm(self, parameters, context, feedback):
+        """
+        Here is where the processing itself takes place.
+        """
+        
+        zip_gtfs = self.parameterAsFile(parameters, self.REP_GTFS, context)
+        #emprise = self.parameterasSource(parameters, self.EMPRISE, context)
+        sortie=(self.parameterAsFileOutput(parameters, self.OUTPUT_ZIP, context))
 
 
 
