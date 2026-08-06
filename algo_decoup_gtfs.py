@@ -152,7 +152,8 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterFileDestination(
                 self.OUTPUT_PATH,
                 self.tr('Chemin de sortie'),
-                fileFilter = "zip",
+                fileFilter = "*.zip",
+                defaultValue='*.zip',
                 optional=False
 
                 

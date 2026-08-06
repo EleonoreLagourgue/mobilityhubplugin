@@ -115,7 +115,8 @@ class MergeGTFS(QgsProcessingAlgorithm):
             QgsProcessingParameterFileDestination(
                 self.OUTPUT_ZIP,
                 self.tr('Chemin de sortie'),
-                fileFilter = "zip",
+                fileFilter = "*.zip",
+                defaultValue='*.zip',
                 optional=False
 
                 
