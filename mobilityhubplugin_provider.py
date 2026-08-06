@@ -42,7 +42,7 @@ from .algo_pente import AddGradeAlgorithm
 from.algo_od import FormateODmatrix
 from .algo_decoup_gtfs import DecoupeGTFSAlgorithm
 from .algo_graph_gtfs import BuildGraphGTFSAlgorithm
-
+from .algo_merge_gtfs import MergeGTFS
 
 
 class MobilityHubPluginProvider(QgsProcessingProvider):
@@ -75,6 +75,7 @@ class MobilityHubPluginProvider(QgsProcessingProvider):
         self.addAlgorithm(FormateODmatrix())
         self.addAlgorithm(DecoupeGTFSAlgorithm())
         self.addAlgorithm(BuildGraphGTFSAlgorithm())
+        self.addAlgorithm(MergeGTFS())
 
 
         
