@@ -166,7 +166,7 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
         
         zip_gtfs = self.parameterAsFile(parameters, self.REP_GTFS, context)
         #emprise = self.parameterasSource(parameters, self.EMPRISE, context)
-        sortie=os.path.splitext(self.parameterAsFileOutput(parameters, self.OUTPUT_PATH, context))[0]
+        sortie=(self.parameterAsFileOutput(parameters, self.OUTPUT_PATH, context))[0]
 
         feedback.pushInfo(zip_gtfs)
         #Reprojection

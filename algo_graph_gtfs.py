@@ -35,7 +35,10 @@ __revision__ = '$Format:%H$'
 # build_graph_algorithm.py
 from qgis.core import (
     QgsProcessingAlgorithm,
+    QgsProcessing,
     QgsProcessingParameterVectorLayer,
+    QgsProcessingParameterFeatureSource,
+    QgsProcessingParameterFile,
     QgsVectorLayer,
     QgsProcessingParameterNumber,
     QgsProcessingParameterEnum,
@@ -65,10 +68,67 @@ import partridge as ptg
 from shapely import ops as sops
 from scipy.spatial import cKDTree
 from shapely import distance
+from shapely.geometry import Point, Polygon, LineString
+
+SPEED = {
+    'walk': 5 * 1000 / 3600,
+    'bike': 15 * 1000 / 3600,
+    'transfer': 5 * 1000 / 3600,
+    'transit': 22 * 1000 / 3600
+}
+
+
+def compute_speed_from_stop_times(stop_sequence_df, stops_gdf):
+    """
+    Calcule la vitesse réelle entre chaque paire d'arrêts
+    depuis les horaires GTFS.
+    
+    Parameters
+    ----------
+    stop_sequence_df : DataFrame
+        stop_times filtré et trié pour un trip_id donné
+    stops_gdf : GeoDataFrame
+        stops avec colonne geometry
+    
+    Returns
+    -------
+    list of dict : [{u, v, speed_kph, travel_time_min, length_m}]
+    """
+    results = []
+    rows = stop_sequence_df.reset_index(drop=True)
+    
+    for i in range(len(rows) - 1):
+        u = rows.iloc[i]
+        v = rows.iloc[i + 1]
+        
+        # Calcul du temps de trajet réel
+        dep = pd.to_timedelta(u['departure_time'])  # gère les >24h (service de nuit)
+        arr = pd.to_timedelta(v['arrival_time'])
+        delta_minutes = (arr - dep).total_seconds() / 60
+        
+        if delta_minutes <= 0:
+            continue
+        
+        # Calcul de la distance
+        pt_u = stops_gdf.loc[stops_gdf.stop_id == u['stop_id'], 'geometry'].values[0]
+        pt_v = stops_gdf.loc[stops_gdf.stop_id == v['stop_id'], 'geometry'].values[0]
+        dist_m = distance((pt_u.y, pt_u.x), (pt_v.y, pt_v.x)).m
+
+
+        
+        results.append({
+            'u': u['stop_id'],
+            'v': v['stop_id'],
+            'travel_time_min': round(delta_minutes, 2)
+        })
+    
 
 class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
 
     INPUT = "INPUT"
+    LI_PIETON ="LI_PIETON"
+    NO_PIETON ="NO_PIETON"
+    SPEED_FIELD = "SPEED_FIELD"
     LIGNES = 'LIGNES'
     NOEUDS = "NOEUDS"
     def __init__(self):
@@ -83,7 +143,17 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
     def initAlgorithm(self, config=None):
         
         
-        self.addParameter(QgsProcessingParameterVectorLayer(self.INPUT, self.tr("Réseau")))
+        self.addParameter(QgsProcessingParameterFile(self.INPUT, self.tr("Réseau")))
+        self.addParameter(QgsProcessingParameterVectorLayer(self.NO_PIETON, 
+                                                              "Nœuds du réseau piéton (points)",
+                                                              [QgsProcessing.SourceType.TypeVectorPoint]))
+        self.addParameter(QgsProcessingParameterVectorLayer(self.LI_PIETON, 
+                                                              "Lignes du réseau piéton (lignes)",
+                                                              [QgsProcessing.SourceType.TypeVectorLine]))
+        self.addParameter(QgsProcessingParameterField(self.SPEED_FIELD, 
+                                                      self.tr("Colonne vitesse en voiture"), 
+                                                      parentLayerParameterName=self.LI_PIETON,
+                                                      optional=True))
         self.addParameter(QgsProcessingParameterFeatureSink(self.LIGNES, self.tr("Couche linéaire du graphe")))
         self.addParameter(QgsProcessingParameterFeatureSink(self.NOEUDS, self.tr("Couche des noeuds du graphe")))
     
@@ -91,7 +161,137 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
     
     def processAlgorithm(self, parameters, context, feedback):
         zip_path = self.parameterasFile(parameters, self.INPUT, context)
+        li_layer = self.parameterAsVectorLayer(parameters, self.LI_PIETON, context)
+        no_layer = self.parameterAsVectorLayer(parameters, self.NO_PIETON, context)
+        
+        gdf_edges = qgis_layer_to_gdf(li_layer)
+        gdf_nodes= qgis_layer_to_gdf(no_layer)
+
+
+
+        G_osm = ox.graph_from_gdfs(gdf_nodes, gdf_edges)
         
         
         #Load gtfs with partridge
         feed = ptg.load_geo_feed(zip_path, view={})
+        # Extract GTFS tables
+        stop_times = feed.stop_times
+        trips = feed.trips
+        stops = feed.stops
+        routes = feed.routes
+        if hasattr(feed, 'shapes') and feed.shapes is not None and not feed.shapes.empty:
+            shapes = feed.shapes
+        else:
+            print("Attention: shapes.txt absent ou vide \n Construction des shapes ")
+            #shapes = shape_selon_geom(gtfs)
+        
+
+            
+
+        # Initialize a multidirected graph
+        G = nx.MultiDiGraph()
+
+        # Add each transit stop as a node in the graph
+        for _, row in stops.iterrows():
+            G.add_node(row['stop_id'], name=row['stop_name'], x=row['geometry'].x, y=row['geometry'].y)
+
+        # Ensure all shape geometries are LineString
+        shapes['geometry'] = shapes['geometry'].apply( lambda geoms: geoms if isinstance(geoms, LineString) else LineString(geoms))
+        
+        shapes = shapes.set_index('shape_id').geometry
+         
+
+        # Create edges from trips, grouped by shape_id
+        for shape_id, group in trips.groupby('shape_id'):
+            if shape_id not in shapes.index or shapes[shape_id] is None:
+                continue
+            geoms = shapes[shape_id]
+
+            # Take the first trip in the group as representative
+            trip_id = group.iloc[0]['trip_id']
+
+            # Get the stop sequence for the trip
+            stop_sequence = stop_times[stop_times.trip_id == trip_id].sort_values('stop_sequence')
+            stop_id = stop_sequence['stop_id'].tolist()
+            
+            #Calcul vitesse réelle
+            speed_data = compute_speed_from_stop_times(stop_sequence, stops)
+            for seg in speed_data:
+                u, v = seg['u'], seg['v']
+                # Retrieve the coordinates of the two stops
+                point_u = stops.loc[stops.stop_id == u, 'geometry'].values[0]
+                point_v = stops.loc[stops.stop_id == v, 'geometry'].values[0]
+                length = distance((point_u.y, point_u.x), (point_v.y, point_v.x)).m
+                # Get geometry for the edge
+                try:
+                    orig = geoms.project(point_u)
+                    dest = geoms.project(point_v)
+                    low, high = sorted([orig, dest])
+                    segment = sops.substring(geoms, low, high, normalized=False)
+                    if segment.is_empty or segment.length == 0:
+                        segment = LineString([point_u, point_v])
+                except:
+                    segment = LineString([point_u, point_v])
+                length = compute_segment_length(segment)
+                
+                delta_hours = seg['travel_time_min'] / 60
+                speed_kph = length / delta_hours if delta_hours > 0 else 22.0
+                if not G.has_edge(u, v, key=trip_id):
+                    G.add_edge(
+                        u, v,
+                        trip_id=trip_id,
+                        geometry=segment,
+                        length=length,
+                        mode='transit',
+                        speed_kph=speed_kph,     
+                        travel_time=seg['travel_time_min']
+                    )
+
+            
+
+        # Set the graph's CRS based on the stops' coordinates
+        if stops.crs is not None:
+            G.graph['crs'] = stops.crs()
+        else:
+            G.graph['crs'] = "EPSG:4326"
+        
+        
+        # Set the graph's CRS to Lambert-93 (EPSG:2154)
+        if G.graph.get('crs') != "EPSG:2154":
+            G = ox.project_graph(G,to_crs = "EPSG:2154")
+        
+        
+        G_gtfs = nx.relabel_nodes(G, {node: i for i, node in enumerate(G.nodes())}, copy=True)
+
+        # Get OSM node coordinates
+        osm_nodes, _ = ox.graph_to_gdfs(G_osm)
+        osm_coords = np.array(list(zip(osm_nodes["y"], osm_nodes["x"])))
+
+        # Get GTFS stop coordinates
+        gtfs_nodes = [(n, data["x"], data["y"]) for n, data in G_gtfs.nodes(data=True)]
+        gtfs_coords = np.array([(y, x) for _, x, y in gtfs_nodes])
+
+        # Build KD-tree for nearest-neighbor search
+        tree = cKDTree(osm_coords)
+
+         # Combine OSM and GTFS graphs
+        G = nx.compose(G_osm, G_gtfs)
+
+        # Connect each GTFS stop to its nearest OSM node(s)
+        for (stop_id, x, y), (dist, idx) in zip(gtfs_nodes, zip(*tree.query(gtfs_coords, k=k))):
+            osm_node = osm_nodes.iloc[idx].name
+            point_u = Point(y, x)
+            point_v = Point(osm_nodes.iloc[idx].y, osm_nodes.iloc[idx].x)
+
+            length = distance(point_u, point_v)
+            travel_time = length / SPEED['transfer'] / 60
+            G.add_edge(stop_id, osm_node, mode="transfer", length=length, travel_time=travel_time)
+            G.add_edge(osm_node, stop_id, mode="transfer", length=length, travel_time=travel_time)
+
+        # Set the graph's CRS to Lambert-93 (EPSG:2154)
+        if G.graph.get('crs') is not None:
+            G.graph["crs"] = "EPSG:2154"
+            
+            
+            
+    

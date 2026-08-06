@@ -375,7 +375,8 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         doublons = shapes_df.duplicated(subset=['shape_id', 'shape_pt_sequence'], keep=False)
         
         if doublons.any():
-            nb_shapes_touches = shapes.loc[doublons, 'shape_id'].nunique()
+            #feedback.pushInfo(str(len(doublons)))
+            nb_shapes_touches = shapes_df.loc[doublons, 'shape_id'].nunique()
             msg = f"{doublons.sum()} doublons sur (shape_id, stop_sequence), {nb_shapes_touches} shape_id touchés."
             feedback.pushWarning(msg)
 
