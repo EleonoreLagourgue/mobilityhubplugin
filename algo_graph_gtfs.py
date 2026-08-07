@@ -310,6 +310,8 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         nodes, lines = ox.graph_to_gdfs(G)
         nodes = nodes.reset_index()
         lines = lines.reset_index()
+        
+        feedback.pushInfo("Conversion en Vector Layer ...")
 
         crs = li_layer.crs()  # on réutilise le CRS de la couche d'entrée
 

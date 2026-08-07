@@ -159,7 +159,7 @@ def findnearestnodeonnearestedge(Gr, X, Y):
         autre_node= v
     else:
         nodeid = v
-        autre_node= u
+        #autre_node= u
     
     node_point = Point(Gr.nodes[nodeid]['x'], Gr.nodes[nodeid]['y'])
     dist_node_on_edge = edge_geom.project(node_point)
@@ -336,13 +336,14 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
 
         # Pour un même (route_id, seq_name), combien de seq_id distincts ?
         pb = check.groupby(['route_id','seq_name'])['seq_id'].nunique()
+        print("pb")
         print(pb[pb > 1])
 
         #Construction shape_id
         sequences = (
             stop_times.sort_values(['trip_id', 'stop_sequence'])
             .groupby('trip_id')['stop_id']
-            .apply(tuple)  # tuple = hashable, comparable
+            .apply(tuple)  
         )
         trips = trips.merge(
             sequences.rename('stop_sequence_tuple'),
