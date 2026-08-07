@@ -65,9 +65,9 @@ import pandas as pd
 import networkx as nx
 import geopandas as gpd
 import partridge as ptg
-from shapely import ops as sops
 from scipy.spatial import cKDTree
 from geopy.distance import distance
+from shapely import ops as sops
 from shapely.geometry import Point, Polygon, LineString
 import shapely
 SPEED = {
@@ -225,8 +225,10 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                 point_u = stops.loc[stops.stop_id == u, 'geometry'].values[0]
                 point_v = stops.loc[stops.stop_id == v, 'geometry'].values[0]
                 feedback.pushInfo(f"u : {str(point_u)}, v : {str(point_v)}")
+                length = distance((point_u.y, point_u.x), (point_v.y, point_v.x)).m
+                #On est en 4326 donc distance géodésique
 
-                length = shapely.distance(point_u, point_v)
+
                 # Get geometry for the edge
                 try:
                     orig = geoms.project(point_u)
@@ -264,6 +266,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         # Set the graph's CRS to Lambert-93 (EPSG:2154)
         if G.graph.get('crs') != "EPSG:2154":
             G = ox.project_graph(G,to_crs = "EPSG:2154")
+            feedback.pushInfo("Reprojection en 2154 !")
         
         
         G_gtfs = nx.relabel_nodes(G, {node: i for i, node in enumerate(G.nodes())}, copy=True)
@@ -288,8 +291,10 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
             osm_node = osm_nodes.iloc[idx].name
             point_u = Point(y, x)
             point_v = Point(osm_nodes.iloc[idx].y, osm_nodes.iloc[idx].x)
+            
+            feedback.pushInfo(f"u : {str(point_u)}, v : {str(point_v)}")
 
-            length = distance(point_u, point_v).m
+            length = shapely.distance(point_u, point_v) #On est en 2154
             travel_time = length / SPEED['transfer'] / 60
             G.add_edge(stop_id, osm_node, mode="transfer", length=length, travel_time=travel_time)
             G.add_edge(osm_node, stop_id, mode="transfer", length=length, travel_time=travel_time)
@@ -297,7 +302,35 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         # Set the graph's CRS to Lambert-93 (EPSG:2154)
         if G.graph.get('crs') is not None:
             G.graph["crs"] = "EPSG:2154"
-            
+        
+        
+        
+        
+        
+        nodes, lines = ox.graph_to_gdfs(G)
+        nodes = nodes.reset_index()
+        lines = lines.reset_index()
+
+        crs = li_layer.crs()  # on réutilise le CRS de la couche d'entrée
+
+        # --- Sink lignes ---
+        lines_fields = gdf_to_qgsfields(lines)
+        lines_wkbtype = gdf_geom_to_qgs_wkbtype(lines)
+        (sink_lignes, dest_id_lignes) = self.parameterAsSink(
+            parameters, self.LIGNES, context,
+            lines_fields, lines_wkbtype, crs
+        )
+        write_gdf_to_sink(lines, sink_lignes)
+    
+        # --- Sink noeuds ---
+        nodes_fields = gdf_to_qgsfields(nodes)
+        nodes_wkbtype = gdf_geom_to_qgs_wkbtype(nodes)
+        (sink_noeuds, dest_id_noeuds) = self.parameterAsSink(
+            parameters, self.NOEUDS, context,
+            nodes_fields, nodes_wkbtype, crs
+        )
+        write_gdf_to_sink(nodes, sink_noeuds)
+        return {self.LIGNES: dest_id_lignes, self.NOEUDS: dest_id_noeuds}
             
             
     
