@@ -165,11 +165,16 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         li_layer = self.parameterAsVectorLayer(parameters, self.LI_PIETON, context)
         no_layer = self.parameterAsVectorLayer(parameters, self.NO_PIETON, context)
         
+        #Construction graphe piéton
+        li_crs = li_layer.crs().authid()  
         edges = qgis_layer_to_gdf(li_layer)
         nodes= qgis_layer_to_gdf(no_layer)
-        nodes = nodes.set_index("osmid")
+        osm_nodes = nodes.set_index("osmid")
         edges = edges.set_index(["u", "v", "key"])
-        G_osm = ox.graph_from_gdfs(nodes, edges)
+        G_osm = ox.graph_from_gdfs(osm_nodes, edges)
+        if li_crs != "EPSG:2154":
+            G_osm = ox.project_graph(G_osm, to_crs="EPSG:2154")
+            feedback.pushInfo(f"Réseau piéton reprojeté de {li_crs} vers EPSG:2154")
         
         
         #Load gtfs with partridge
@@ -265,14 +270,17 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         
         # Set the graph's CRS to Lambert-93 (EPSG:2154)
         if G.graph.get('crs') != "EPSG:2154":
-            G = ox.project_graph(G,to_crs = "EPSG:2154")
+            G = ox.project_graph(G,to_crs = 2154)
             feedback.pushInfo("Reprojection en 2154 !")
         
+                
+        # =============================================================================
+        #         Connexion des deux graphes
+        # =============================================================================
         
         G_gtfs = nx.relabel_nodes(G, {node: i for i, node in enumerate(G.nodes())}, copy=True)
 
         # Get OSM node coordinates
-        osm_nodes, _ = ox.graph_to_gdfs(G_osm)
         osm_coords = np.array(list(zip(osm_nodes["y"], osm_nodes["x"])))
 
         # Get GTFS stop coordinates
@@ -280,14 +288,21 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         gtfs_coords = np.array([(y, x) for _, x, y in gtfs_nodes])
 
         # Build KD-tree for nearest-neighbor search
-        tree = cKDTree(osm_coords)
+        tree = cKDTree(osm_coords) #pose pb quand arrêt hors zone
 
          # Combine OSM and GTFS graphs
         G = nx.compose(G_osm, G_gtfs)
         
         k=1
+        max_dist = 500 #mètres
+
         # Connect each GTFS stop to its nearest OSM node(s)
         for (stop_id, x, y), (dist, idx) in zip(gtfs_nodes, zip(*tree.query(gtfs_coords, k=k))):
+            
+            #Vérification distance
+            if dist > max_dist:
+                feedback.pushWarning(f"Arrêt {stop_id} ignoré : nœud piéton le plus proche à {dist:.0f} m")
+            
             osm_node = osm_nodes.iloc[idx].name
             point_u = Point(y, x)
             point_v = Point(osm_nodes.iloc[idx].y, osm_nodes.iloc[idx].x)

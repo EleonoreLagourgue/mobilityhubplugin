@@ -431,6 +431,7 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
                 
                 #Calculer le tracé entre l'arrêt actuel et le suivant
                 try:
+                    feedback.pushInfo("On cherche la route ...")
                     geom_reproj = get_route_between_stops(start_point, end_point, graphe_a_utiliser,edges_gdf, simpli=False)
                     lons = list(geom_reproj["shape_pt_lon"])
                     lats = list(geom_reproj["shape_pt_lat"])

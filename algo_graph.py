@@ -37,6 +37,7 @@ from collections import OrderedDict
 
 
 import osmnx as ox
+import networkx as nx
 
 
 class BuildGraphAlgorithm(QgsProcessingAlgorithm):
@@ -92,7 +93,7 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterString(self.DEFAULT_SPEED, self.tr("Vitesse par défaut"), defaultValue=50))
        
         
-        self.addParameter(QgsProcessingParameterNumber(self.TOLERANCE, self.tr("Tolérance topologique"), defaultValue=0.0))
+        self.addParameter(QgsProcessingParameterNumber(self.TOLERANCE, self.tr("Tolérance topologique (en mètres)"), defaultValue=0.0))
 
         self.addParameter(
         QgsProcessingParameterEnum(
@@ -172,6 +173,10 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
             graph = crea_graphe(gdf_route, colonne_direction, value_forward, value_backward, value_both, mode ="walk")
             feedback.pushInfo("Vérification des doublons")
             graph_snapped = doublon_noeuds(graph, tolerance=tolerance)
+            print(f"Composantes faiblement connexes : {nx.number_weakly_connected_components(graph_snapped)}")
+
+            graph_snapped = ox.truncate.largest_component(graph_snapped)
+
             feedback.pushInfo("Calcul vitesse")
             ponderer_distance_train(graph_snapped)
         feedback.pushInfo(f"Graphe construit : {graph_snapped.number_of_edges()} sommets, {graph_snapped.number_of_nodes()} arêtes")
