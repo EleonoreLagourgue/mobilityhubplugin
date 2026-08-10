@@ -277,6 +277,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         # =============================================================================
         #         Connexion des deux graphes
         # =============================================================================
+        zone_etude = osm_nodes.geometry.union_all().convex_hull
         
         G_gtfs = nx.relabel_nodes(G, {node: i for i, node in enumerate(G.nodes())}, copy=True)
 
@@ -294,20 +295,20 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         G = nx.compose(G_osm, G_gtfs)
         
         k=1
-        max_dist = 500 #mètres
 
         # Connect each GTFS stop to its nearest OSM node(s)
         for (stop_id, x, y), (dist, idx) in zip(gtfs_nodes, zip(*tree.query(gtfs_coords, k=k))):
-            
+            point_stop = Point(x, y)
             #Vérification distance
-            if dist > max_dist:
+            if not zone_etude.contains(point_stop):
                 feedback.pushWarning(f"Arrêt {stop_id} ignoré : nœud piéton le plus proche à {dist:.0f} m")
-            
+
+                continue
             osm_node = osm_nodes.iloc[idx].name
             point_u = Point(y, x)
             point_v = Point(osm_nodes.iloc[idx].y, osm_nodes.iloc[idx].x)
             
-            feedback.pushInfo(f"u : {str(point_u)}, v : {str(point_v)}")
+            #feedback.pushInfo(f"u : {str(point_u)}, v : {str(point_v)}")
 
             length = shapely.distance(point_u, point_v) #On est en 2154
             travel_time = length / SPEED['transfer'] / 60
