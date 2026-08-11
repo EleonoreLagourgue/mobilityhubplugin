@@ -68,6 +68,7 @@ import partridge as ptg
 from scipy.spatial import cKDTree
 from geopy.distance import distance
 from shapely import ops as sops
+import pyproj
 from shapely.geometry import Point, Polygon, LineString
 import shapely
 SPEED = {
@@ -225,9 +226,9 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         # manquants = trips[~trips['shape_id'].isin(shapes.index)]
         # feedback.pushInfo(f"Trips avec shape_id introuvable dans shapes.txt : {len(manquants)}")
 
-        trip_test = "LOT_ET_GARONNE:VehicleJourney:185539"
-        seq = stop_times[stop_times.trip_id == trip_test].sort_values('stop_sequence')
-        feedback.pushInfo(seq[['stop_sequence', 'stop_id', 'arrival_time', 'departure_time']].to_string())
+        # Vérification géométrie
+        feedback.pushInfo(f"Bounds stops (lon,lat) : {stops.total_bounds}")
+        feedback.pushInfo(f"Bounds shapes (lon,lat) : {gpd.GeoSeries(shapes).total_bounds}")
         
         
         # trips_sans_horaire_valide = trips[~trips['trip_id'].isin(
@@ -241,7 +242,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
             if shape_id not in shapes.index or shapes[shape_id] is None:
                 continue
             geoms = shapes[shape_id]
-            feedback.pushInfo(f"Type de segment : {geoms.type}")
+            #feedback.pushInfo(f"Type de géométrie : {geoms.type}")
 
             # Take the first trip in the group as representative
             trip_id = group.iloc[0]['trip_id']
@@ -262,7 +263,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                 # Retrieve the coordinates of the two stops
                 point_u = stops.loc[stops.stop_id == u, 'geometry'].values[0]
                 point_v = stops.loc[stops.stop_id == v, 'geometry'].values[0]
-                feedback.pushInfo(f"u : {str(point_u)}, v : {str(point_v)}")
+                #feedback.pushInfo(f"u : {str(point_u)}, v : {str(point_v)}")
                 length = distance((point_u.y, point_u.x), (point_v.y, point_v.x)).m
                 #On est en 4326 donc distance géodésique
 
@@ -273,7 +274,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                     dest = geoms.project(point_v)
                     low, high = sorted([orig, dest])
                     segment = sops.substring(geoms, low, high, normalized=False)
-                    feedback.pushInfo(f"Type de segment : {str(segment)}")
+                    #feedback.pushInfo(f"Type de segment : {str(segment.type)}")
                     if segment.is_empty or segment.length == 0:
                         segment = LineString([point_u, point_v])
                 except Exception as e:
@@ -285,7 +286,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                 speed_kph = length / delta_hours if delta_hours > 0 else 22.0
                 if not G.has_edge(u, v, key=trip_id):
                     G.add_edge(
-                        u, v,key=trip_id,
+                        u, v,
                         trip_id=trip_id,
                         geometry=segment,
                         length=length,
@@ -302,13 +303,20 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         else:
             G.graph['crs'] = "EPSG:4326"
         
-        
+        transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2154", always_xy=True).transform
         # Set the graph's CRS to Lambert-93 (EPSG:2154)
         if G.graph.get('crs') != "EPSG:2154":
+            for u, v, k, data in G.edges(keys=True, data=True):
+                if 'geometry' in data and data['geometry'] is not None:
+                    data['geometry'] = sops.transform(transformer, data['geometry'])
             G = ox.project_graph(G,to_crs = 2154)
             feedback.pushInfo(f"Reprojection en {G.graph['crs']} !")
         
-        
+        for u, v, k, data in list(G.edges(keys=True, data=True))[:3]:
+            if 'geometry' in data:
+                feedback.pushInfo(f"edge geometry bounds: {data['geometry'].bounds}")
+                node0 = list(G.nodes(data=True))[0]
+                feedback.pushInfo(f"node x,y: {node0[1].get('x')}, {node0[1].get('y')}")
         # n_transit = sum(1 for _, _, d in G.edges(data=True) if d.get('mode') == 'transit')
         # feedback.pushInfo(f"Arêtes transit créées avant compose: {n_transit}")
         # =============================================================================
@@ -354,13 +362,14 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
 
         # Set the graph's CRS to Lambert-93 (EPSG:2154)
         if G.graph.get('crs') is not None:
-            G.graph["crs"] = "EPSG:2154"
+            G.graph["crs"] = edges.crs()
         
         
         
         
         
         nodes, lines = ox.graph_to_gdfs(G)
+        feedback.pushInfo(f"Nombres d'arêtes : {len(lines)}")
         nodes = nodes.reset_index()
         lines = lines.reset_index()
         

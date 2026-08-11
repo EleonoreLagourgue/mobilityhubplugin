@@ -295,6 +295,8 @@ class MatriceTemps(QgsProcessingAlgorithm):
         feedback.pushInfo(node_field)
 
         feedback.pushInfo("Recherche des nœuds les plus proches (hubs)...")
+        
+        feedback.pushInfo(f"crs du graphe : {G.graph['crs']}")
         nodes_hubs = add_nearest_node(hubs_layer, G, node_field, id_hub, feedback=feedback)
         if feedback.isCanceled():
             return {}
