@@ -106,12 +106,9 @@ def compute_speed_from_stop_times(stop_sequence_df, stops_gdf, feedback=None, tr
         arr = (v['arrival_time'])
         delta_minutes = (arr - dep) / 60
         
-        feedback.pushInfo(f"Temps avec première méthode : {delta_minutes}")
+        #feedback.pushInfo(f"Temps avec première méthode : {delta_minutes}")
         
-        dep = pd.to_timedelta(u['departure_time'], unit='s')
-        arr = pd.to_timedelta(v['arrival_time'], unit='s')
-        delta_minutes = (arr - dep).total_seconds() / 60
-        feedback.pushInfo(f"Temps avec deuxième méthode : {delta_minutes}")
+        
 
         # Calcul de la distance
         pt_u = stops_gdf.loc[stops_gdf.stop_id == u['stop_id'], 'geometry'].values[0]
@@ -221,7 +218,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         shapes_liees = shapes.merge(trips, on = "shape_id")
         shapes_liees = shapes_liees.merge(routes, on = "route_id")
         
-        shapes = shapes_liees.set_index('shape_id').geometry
+        shapes = shapes.set_index('shape_id').geometry
         
         # Vérification
         # feedback.pushInfo(f"Trips sans shape_id : {trips['shape_id'].isna().sum()} / {len(trips)}")
@@ -244,6 +241,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
             if shape_id not in shapes.index or shapes[shape_id] is None:
                 continue
             geoms = shapes[shape_id]
+            feedback.pushInfo(f"Type de segment : {geoms.type}")
 
             # Take the first trip in the group as representative
             trip_id = group.iloc[0]['trip_id']
@@ -275,6 +273,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                     dest = geoms.project(point_v)
                     low, high = sorted([orig, dest])
                     segment = sops.substring(geoms, low, high, normalized=False)
+                    feedback.pushInfo(f"Type de segment : {str(segment)}")
                     if segment.is_empty or segment.length == 0:
                         segment = LineString([point_u, point_v])
                 except Exception as e:
