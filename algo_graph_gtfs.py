@@ -102,16 +102,23 @@ def compute_speed_from_stop_times(stop_sequence_df, stops_gdf, feedback=None, tr
         v = rows.iloc[i + 1]
         
         # Calcul du temps de trajet réel
-        dep = pd.to_timedelta(u['departure_time'])  # gère les >24h (service de nuit)
-        arr = pd.to_timedelta(v['arrival_time'])
+        dep = (u['departure_time'])  # gère les >24h (service de nuit)
+        arr = (v['arrival_time'])
+        delta_minutes = (arr - dep) / 60
+        
+        feedback.pushInfo(f"Temps avec première méthode : {delta_minutes}")
+        
+        dep = pd.to_timedelta(u['departure_time'], unit='s')
+        arr = pd.to_timedelta(v['arrival_time'], unit='s')
         delta_minutes = (arr - dep).total_seconds() / 60
-        
-        
+        feedback.pushInfo(f"Temps avec deuxième méthode : {delta_minutes}")
+
         # Calcul de la distance
         pt_u = stops_gdf.loc[stops_gdf.stop_id == u['stop_id'], 'geometry'].values[0]
         pt_v = stops_gdf.loc[stops_gdf.stop_id == v['stop_id'], 'geometry'].values[0]
         if delta_minutes <= 0:
             # Probablement du TAD
+            feedback.pushInfo(f"Départ : {dep} vs Arrivée : {arr}")
             dist_m = distance((pt_u.y, pt_u.x), (pt_v.y, pt_v.x)).m
             delta_minutes = (dist_m / 1000) / 22 * 60  # vitesse par défaut 22 km/h
             if feedback and trip_id:
@@ -199,8 +206,8 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
             #shapes = shape_selon_geom(gtfs)
         
 
-        feedback.pushInfo(f"dtype stop_sequence: {stop_times['stop_sequence'].dtype}")
-        stop_times['stop_sequence'] = pd.to_numeric(stop_times['stop_sequence'])
+        #feedback.pushInfo(f"dtype stop_sequence: {stop_times['stop_sequence'].dtype}")
+        #stop_times['stop_sequence'] = pd.to_numeric(stop_times['stop_sequence'])
 
         # Initialize a multidirected graph
         G = nx.MultiDiGraph()
@@ -214,17 +221,24 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         shapes_liees = shapes.merge(trips, on = "shape_id")
         shapes_liees = shapes_liees.merge(routes, on = "route_id")
         
-        shapes = shapes.set_index('shape_id').geometry
+        shapes = shapes_liees.set_index('shape_id').geometry
         
         # Vérification
         # feedback.pushInfo(f"Trips sans shape_id : {trips['shape_id'].isna().sum()} / {len(trips)}")
         # manquants = trips[~trips['shape_id'].isin(shapes.index)]
         # feedback.pushInfo(f"Trips avec shape_id introuvable dans shapes.txt : {len(manquants)}")
 
-        trip_test = "LOT_ET_GARONNE:VehicleJourney:175289"
+        trip_test = "LOT_ET_GARONNE:VehicleJourney:185539"
         seq = stop_times[stop_times.trip_id == trip_test].sort_values('stop_sequence')
         feedback.pushInfo(seq[['stop_sequence', 'stop_id', 'arrival_time', 'departure_time']].to_string())
         
+        
+        # trips_sans_horaire_valide = trips[~trips['trip_id'].isin(
+        # stop_times.groupby('trip_id').filter(
+        #     lambda g: (pd.to_timedelta(g.sort_values('stop_sequence')['departure_time']).diff().dt.total_seconds() > 0).any()
+        # )['trip_id']
+        # )]
+        # feedback.pushInfo(f"Horaires invalides : {len(trips_sans_horaire_valide)} / {len(trips)} trips concernés")
         # Create edges from trips, grouped by shape_id
         for shape_id, group in trips.groupby('shape_id'):
             if shape_id not in shapes.index or shapes[shape_id] is None:
@@ -296,8 +310,8 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
             feedback.pushInfo(f"Reprojection en {G.graph['crs']} !")
         
         
-        n_transit = sum(1 for _, _, d in G.edges(data=True) if d.get('mode') == 'transit')
-        feedback.pushInfo(f"Arêtes transit créées avant compose: {n_transit}")
+        # n_transit = sum(1 for _, _, d in G.edges(data=True) if d.get('mode') == 'transit')
+        # feedback.pushInfo(f"Arêtes transit créées avant compose: {n_transit}")
         # =============================================================================
         #         Connexion des deux graphes
         # =============================================================================
