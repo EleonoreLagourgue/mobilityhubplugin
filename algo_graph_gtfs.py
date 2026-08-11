@@ -78,7 +78,7 @@ SPEED = {
 }
 
 
-def compute_speed_from_stop_times(stop_sequence_df, stops_gdf):
+def compute_speed_from_stop_times(stop_sequence_df, stops_gdf, feedback=None, trip_id=None):
     """
     Calcule la vitesse réelle entre chaque paire d'arrêts
     depuis les horaires GTFS.
@@ -106,13 +106,21 @@ def compute_speed_from_stop_times(stop_sequence_df, stops_gdf):
         arr = pd.to_timedelta(v['arrival_time'])
         delta_minutes = (arr - dep).total_seconds() / 60
         
-        if delta_minutes <= 0:
-            continue
         
         # Calcul de la distance
         pt_u = stops_gdf.loc[stops_gdf.stop_id == u['stop_id'], 'geometry'].values[0]
         pt_v = stops_gdf.loc[stops_gdf.stop_id == v['stop_id'], 'geometry'].values[0]
-        #dist_m = distance((pt_u.y, pt_u.x), (pt_v.y, pt_v.x)).m
+        if delta_minutes <= 0:
+            # Probablement du TAD
+            dist_m = distance((pt_u.y, pt_u.x), (pt_v.y, pt_v.x)).m
+            delta_minutes = (dist_m / 1000) / 22 * 60  # vitesse par défaut 22 km/h
+            if feedback and trip_id:
+                feedback.pushInfo(f"[trip {trip_id}] horaire invalide u={u['stop_id']} "
+                                   f"v={v['stop_id']}, estimation à {delta_minutes:.1f} min")
+
+            continue
+        
+        
 
 
         
@@ -191,7 +199,8 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
             #shapes = shape_selon_geom(gtfs)
         
 
-            
+        feedback.pushInfo(f"dtype stop_sequence: {stop_times['stop_sequence'].dtype}")
+        stop_times['stop_sequence'] = pd.to_numeric(stop_times['stop_sequence'])
 
         # Initialize a multidirected graph
         G = nx.MultiDiGraph()
@@ -207,8 +216,15 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         
         shapes = shapes.set_index('shape_id').geometry
         
+        # Vérification
+        # feedback.pushInfo(f"Trips sans shape_id : {trips['shape_id'].isna().sum()} / {len(trips)}")
+        # manquants = trips[~trips['shape_id'].isin(shapes.index)]
+        # feedback.pushInfo(f"Trips avec shape_id introuvable dans shapes.txt : {len(manquants)}")
 
-
+        trip_test = "LOT_ET_GARONNE:VehicleJourney:175289"
+        seq = stop_times[stop_times.trip_id == trip_test].sort_values('stop_sequence')
+        feedback.pushInfo(seq[['stop_sequence', 'stop_id', 'arrival_time', 'departure_time']].to_string())
+        
         # Create edges from trips, grouped by shape_id
         for shape_id, group in trips.groupby('shape_id'):
             if shape_id not in shapes.index or shapes[shape_id] is None:
@@ -223,7 +239,12 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
             stop_id = stop_sequence['stop_id'].tolist()
             
             #Calcul vitesse réelle
-            speed_data = compute_speed_from_stop_times(stop_sequence, stops)
+            speed_data = compute_speed_from_stop_times(stop_sequence, stops, feedback, trip_id)            
+            if not speed_data:
+                feedback.pushInfo(f"[shape {shape_id}, trip {trip_id}] Aucun segment valide "
+                       f"(stop_sequence dtype={stop_sequence['stop_sequence'].dtype}, "
+                       f"n_stops={len(stop_sequence)})")
+            
             for seg in speed_data:
                 u, v = seg['u'], seg['v']
                 # Retrieve the coordinates of the two stops
@@ -242,7 +263,8 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                     segment = sops.substring(geoms, low, high, normalized=False)
                     if segment.is_empty or segment.length == 0:
                         segment = LineString([point_u, point_v])
-                except:
+                except Exception as e:
+                    feedback.pushWarning(f"[shape {shape_id}] projection échouée u={u} v={v}: {e}")
                     segment = LineString([point_u, point_v])
                 length = segment.length
                 
@@ -250,7 +272,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                 speed_kph = length / delta_hours if delta_hours > 0 else 22.0
                 if not G.has_edge(u, v, key=trip_id):
                     G.add_edge(
-                        u, v,
+                        u, v,key=trip_id,
                         trip_id=trip_id,
                         geometry=segment,
                         length=length,
@@ -271,9 +293,11 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         # Set the graph's CRS to Lambert-93 (EPSG:2154)
         if G.graph.get('crs') != "EPSG:2154":
             G = ox.project_graph(G,to_crs = 2154)
-            feedback.pushInfo("Reprojection en 2154 !")
+            feedback.pushInfo(f"Reprojection en {G.graph['crs']} !")
         
-                
+        
+        n_transit = sum(1 for _, _, d in G.edges(data=True) if d.get('mode') == 'transit')
+        feedback.pushInfo(f"Arêtes transit créées avant compose: {n_transit}")
         # =============================================================================
         #         Connexion des deux graphes
         # =============================================================================
