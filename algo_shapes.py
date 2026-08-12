@@ -156,7 +156,7 @@ def findnearestnodeonnearestedge(Gr, X, Y):
 
     if d1 < d2:
         nodeid = u
-        autre_node= v
+        #autre_node= v
     else:
         nodeid = v
         #autre_node= u

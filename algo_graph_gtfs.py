@@ -185,6 +185,8 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         osm_nodes = nodes.set_index("osmid")
         edges = edges.set_index(["u", "v", "key"])
         G_osm = ox.graph_from_gdfs(osm_nodes, edges)
+        feedback.pushInfo(f"crs des arêtes : {edges.crs}")
+
         if li_crs != "EPSG:2154":
             G_osm = ox.project_graph(G_osm, to_crs="EPSG:2154")
             feedback.pushInfo(f"Réseau piéton reprojeté de {li_crs} vers EPSG:2154")

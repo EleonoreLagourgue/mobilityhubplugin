@@ -286,6 +286,8 @@ class MatriceTemps(QgsProcessingAlgorithm):
         nodes = nodes.set_index("osmid")
         edges = edges.set_index(["u", "v", "key"])
         G = ox.graph_from_gdfs(nodes, edges)
+        feedback.pushInfo(f"crs des arêtes : {edges.crs}")
+
         
         print(nodes.head())
         nom = modes[id_mode]

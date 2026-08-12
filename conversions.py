@@ -37,10 +37,9 @@ def gdf_from_layer_arrow(layer):
         options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteFile 
         options.layerName = 'data'
         options.driverName = "arrow"
+        options.layerOptions = ['GEOMETRY_ENCODING=GEOARROW']  # tentative
          
-        QgsVectorFileWriter.writeAsVectorFormatV3(
-            layer, path, QgsProject.instance().transformContext(), options
-        )
+       
         result = QgsVectorFileWriter.writeAsVectorFormatV3(
         layer, path, QgsProject.instance().transformContext(), options
     )
@@ -56,6 +55,8 @@ def gdf_from_layer_arrow(layer):
                 table = pa.ipc.open_stream(source).read_all()
 
         gdf = gpd.GeoDataFrame.from_arrow(table)
+        if gdf.crs is None:
+            gdf = gdf.set_crs(layer.crs().authid(), allow_override=True)
     return gdf
 
 def qgis_layer_to_gdf(layer: QgsVectorLayer) -> gpd.GeoDataFrame:
