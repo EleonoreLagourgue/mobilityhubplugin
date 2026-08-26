@@ -4,6 +4,8 @@ from qgis.core import (
     QgsProcessingParameterNumber,
     QgsProcessingParameterFeatureSink,
     QgsProcessingParameterFile,
+    QgsProcessingParameterField,
+    QgsProcessingParameterEnum,
     QgsFeatureSink,
     QgsVectorLayer,
     QgsProcessingFeatureSource,
@@ -36,10 +38,18 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
     """
     NODES = "NODES"
     HUBS = "HUBS"
+    IDPOP = "IDPOP"
+    COLPOP = "COLPOP"
+    
+    HUBS = "HUBS"
+    IDHUB = "IDHUB"
     OD_MATRIX = "OD_MATRIX"
     BUDGET = "BUDGET"
     ITINERAIRES= "ITINERAIRES"
+    ALLOW_CS = "ALLOW_CS"
     OUTPUT = "OUTPUT"
+    
+    LISTE: list[str] = ["Oui", "Non"]
     def createInstance(self):
         return LocateHubsWorkplaceAlgorithm()
 
@@ -57,12 +67,30 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterFeatureSource(self.NODES, "Nœuds de population (points)"))
-        self.addParameter(QgsProcessingParameterFeatureSource(self.HUBS, "Hubs candidats (points)"))
+        self.addParameter(QgsProcessingParameterField(self.COLPOP, 
+                                                      "Colonne id pour la couche de population",
+                                                      parentLayerParameterName=self.NODES))
+        self.addParameter(QgsProcessingParameterField(self.IDPOP, 
+                                                      "Colonne population pour la couche de population",
+                                                      parentLayerParameterName=self.NODES))
+        self.addParameter(QgsProcessingParameterFeatureSource(self.HUBS, 
+                                                              "Hubs candidats (points)"))
+        self.addParameter(QgsProcessingParameterField(self.IDHUB, 
+                                              "Colonne id pour la couche des hubs",
+                                              parentLayerParameterName=self.HUBS))        
         self.addParameter(QgsProcessingParameterFile(self.OD_MATRIX, "Matrice OD"))
         self.addParameter(QgsProcessingParameterFile(self.ITINERAIRES, 
                                                               "Itinéraires potentiels"))
 
         self.addParameter(QgsProcessingParameterNumber(self.BUDGET, "Budget (€)", defaultValue=150000))
+        
+        
+        self.addParameter(QgsProcessingParameterEnum(self.ALLOW_CS,
+                                                 "Direction par défaut",
+                                                 options =self.LISTE,
+                                                 allowMultiple=False,
+                                                 optional = True,
+                                                 defaultValue= self.LISTE.index("Non")))
         self.addParameter(QgsProcessingParameterFeatureSink(self.OUTPUT, "Hubs sélectionnés"))
 
        

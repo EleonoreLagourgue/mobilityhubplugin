@@ -143,7 +143,8 @@ def write_gdf_to_sink(gdf, sink):
         sink.addFeature(feat)
 #%%GTFS
 def seconds_to_hms(val):
-    """Reconvertit les secondes (format interne Partridge) en HH:MM:SS."""
+    """Reconvertit les secondes (format interne Partridge) en HH:MM:SS 
+    pour pouvoir les relire ensuite."""
     if pd.isna(val) or val == "":
         return val
     try:

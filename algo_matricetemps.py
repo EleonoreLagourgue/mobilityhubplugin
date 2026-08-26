@@ -117,7 +117,7 @@ def lat_lon(layer):
     layer.commitChanges()
     return layer
 
-def build_time_matrix(G, all_nodes, weight, feedback=None):
+def build_time_matrix(G, all_nodes, weight, feedback=None, batch_size=200):
     """
     Calcule la matrice temps (en minutes) entre tous les nœuds de all_nodes,
     en une seule passe via scipy (Dijkstra multi-source, code compilé),
@@ -127,40 +127,74 @@ def build_time_matrix(G, all_nodes, weight, feedback=None):
     """
     if feedback:
         feedback.pushInfo("Conversion du MultiDiGraph en DiGraph (poids minimal conservé)...")
-    # Un graphe osmnx est un MultiDiGraph : il peut y avoir plusieurs arêtes
-    # entre deux mêmes nœuds. On ne garde que l'arête de poids minimal pour
-    # que la matrice creuse représente correctement le plus court chemin.
+    
     DG = ox.convert.to_digraph(G, weight=weight)
- 
+    
+    
     node_list = list(DG.nodes())
     node_index = {n: i for i, n in enumerate(node_list)}
- 
+    
+    keys = list(all_nodes.keys())
+    osm_ids = [all_nodes[k] for k in keys]
+    target_indices = np.array([node_index[n] for n in osm_ids])
+    
+    n = len(target_indices)
+    result = np.full((n, n), np.inf, dtype=np.float32)  # float32 pour limiter la mémoire
+    
     if feedback:
         feedback.pushInfo("Construction de la matrice creuse du réseau...")
     A = nx.to_scipy_sparse_array(DG, nodelist=node_list, weight=weight, format="csr")
- 
-    labels = list(all_nodes.keys())
-    osmids = [all_nodes[k] for k in labels]
- 
-    missing = [lbl for lbl, n in zip(labels, osmids) if n not in node_index]
-    if missing:
-        raise ValueError(
-            f"Nœuds absents du graphe après conversion : {missing[:10]}"
-            + (" ..." if len(missing) > 10 else "")
+    
+    for start in range(0, n, batch_size):
+        end = min(start + batch_size, n)
+        batch_source_idx = target_indices[start:end]
+
+        feedback.pushInfo(f"Calcul Dijkstra {start}-{end} / {n} ...")
+
+        # dist_batch shape: (batch_size, n_total_nodes_du_graphe)
+        dist_batch = scipy_dijkstra(
+            csgraph=A,
+            directed=True,
+            indices=batch_source_idx,
         )
+
+        # On ne garde QUE les colonnes correspondant à nos nœuds d'intérêt
+        result[start:end, :] = dist_batch[:, target_indices]
+
+        del dist_batch  # libère la mémoire immédiatement
+
+        if feedback.isCanceled():
+            break
+
  
-    indices = [node_index[n] for n in osmids]
+    
  
-    if feedback:
-        feedback.pushInfo(f"Calcul de {len(indices)} plus courts chemins (Dijkstra vectorisé)...")
+    # labels = list(all_nodes.keys())
+    # osmids = [all_nodes[k] for k in labels]
  
-    # Une seule passe pour toutes les sources -> matrice (n_sources, n_total_nodes)
-    dist_matrix = scipy_dijkstra(csgraph=A, directed=True, indices=indices)
+    # missing = [lbl for lbl, n in zip(labels, osmids) if n not in node_index]
+    # if missing:
+    #     raise ValueError(
+    #         f"Nœuds absents du graphe après conversion : {missing[:10]}"
+    #         + (" ..." if len(missing) > 10 else "")
+    #     )
  
-    # On ne garde que les colonnes correspondant aux nœuds d'intérêt
-    sub = dist_matrix[:, indices] / 60.0  # secondes -> minutes
+    # indices = [node_index[n] for n in osmids]
  
-    matrix = pd.DataFrame(sub, index=labels, columns=labels)
+    # if feedback:
+    #     feedback.pushInfo(f"Calcul de {len(indices)} plus courts chemins (Dijkstra vectorisé)...")
+ 
+    # # Une seule passe pour toutes les sources -> matrice (n_sources, n_total_nodes)
+    # dist_matrix = scipy_dijkstra(csgraph=A, directed=True, indices=indices)
+ 
+    # # On ne garde que les colonnes correspondant aux nœuds d'intérêt
+    # sub = dist_matrix[:, indices] / 60.0  # secondes -> minutes
+ 
+    # matrix = pd.DataFrame(sub, index=labels, columns=labels)
+    
+    result = result / 60.0  # secondes -> minutes
+    matrix = pd.DataFrame(result, index=keys, columns=keys)
+    matrix.index.name = "origine"
     return matrix
 
 
@@ -237,7 +271,7 @@ class MatriceTemps(QgsProcessingAlgorithm):
         QgsProcessingParameterEnum(
         self.MODE,
         'Choisir un mode de déplacement',
-        options=['Voiture', 'Piéton', 'Vélo','Train'],
+        options=['Voiture', 'Piéton', 'Vélo','Transport en commun'],
         allowMultiple=False,
         defaultValue=0,   # index par défaut (0 = premier élément)
         optional=False    # <-- rend le paramètre obligatoire
@@ -279,7 +313,7 @@ class MatriceTemps(QgsProcessingAlgorithm):
         fichier_sortie=self.parameterAsFileOutput(parameters, self.MATRIX, context)
 
         feedback.pushInfo("Construction de la matrice de temps ...")
-        modes = ['Voiture', 'Piéton', 'Vélo','Train']
+        modes = ['Voiture', 'Piéton', 'Vélo','Transport en commun']
         
         nodes = gdf_from_layer_arrow(nodes_layer)
         edges = gdf_from_layer_arrow(lignes_layer)
@@ -330,6 +364,10 @@ class MatriceTemps(QgsProcessingAlgorithm):
             return {}
 
         matrix = build_time_matrix(G, all_nodes, weight, feedback)
+        matrix = matrix.round(2)
+        matrix.to_csv(fichier_sortie, index=True, float_format="%.2f")
+
+
 
         feedback.pushInfo(f"Écriture du fichier de sortie : {fichier_sortie}")
         matrix.to_csv(fichier_sortie, index=True)

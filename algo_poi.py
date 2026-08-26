@@ -37,6 +37,7 @@ from qgis.core import (
     QgsProcessingParameterFeatureSink,
     QgsProcessingParameterField,
     QgsProcessingParameterFile,
+    QgsProcessingParameterEnum,
     QgsFeatureSink,
     QgsFields,
     QgsField,
@@ -65,8 +66,11 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
     ITINERAIRES= "ITINERAIRES"
     BUDGET = "BUDGET"
     THRESHOLD = "THRESHOLD"
+    LISTE = "LISTE"
+    ALLOW_CS = "ALLOW_CS"
     OUTPUT = "OUTPUT"
-
+    
+    LISTE: list[str] = ["Oui", "Non"]
     def createInstance(self):
         return LocateHubsPOIAlgorithm()
 
@@ -83,6 +87,8 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
         return "mobility_hub"
 
     def initAlgorithm(self, config=None):
+        
+        
         self.addParameter(QgsProcessingParameterFeatureSource(self.POP, 
                                                               "Nœuds de population (points)"))
         self.addParameter(QgsProcessingParameterField(self.COLPOP, 
@@ -114,11 +120,18 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
                                                        "Budget (€)", defaultValue=150000))
         self.addParameter(QgsProcessingParameterNumber(self.POITRAVEL, 
                                                        "Seuil de temps de trajet (min)", defaultValue=30))
+        self.addParameter(QgsProcessingParameterEnum(self.ALLOW_CS,
+                                                 "Direction par défaut",
+                                                 options =self.LISTE,
+                                                 allowMultiple=False,
+                                                 optional = True,
+                                                 defaultValue= self.LISTE.index("Non")))
+        
         self.addParameter(QgsProcessingParameterFeatureSink(self.OUTPUT, 
                                                             "Hubs sélectionnés"))
 
     def processAlgorithm(self, parameters, context, feedback):
-        nodes_src = self.parameterAsVectorLayer(parameters, self.NODES, context)#QgsProcessingFeatureSource
+        nodes_src = self.parameterAsVectorLayer(parameters, self.POP, context)#QgsProcessingFeatureSource
         hubs_src = self.parameterAsVectorLayer(parameters, self.HUBS, context)#QgsProcessingFeatureSource
         pois_src = self.parameterAsVectorLayer(parameters, self.DESTINATION, context)#QgsProcessingFeatureSource
         itineraries_src = self.parameterAsSource(parameters, self.ITINERAIRES, context)

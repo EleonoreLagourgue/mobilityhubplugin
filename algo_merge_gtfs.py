@@ -179,20 +179,21 @@ class MergeGTFS(QgsProcessingAlgorithm):
             "frequencies": ["start_time", "end_time"],
         }
         for table_name, cols in TIME_COLUMNS.items():
-            if table_name in all_feeds_data:
+            if table_name in merged_feed:
                 for col in cols:
-                    if col in all_feeds_data[table_name].columns:
-                        all_feeds_data[table_name][col] = all_feeds_data[table_name][col].apply(seconds_to_hms)
+                    if col in merged_feed[table_name].columns:
+                        merged_feed[table_name][col] = merged_feed[table_name][col].apply(seconds_to_hms)
+                        feedback.pushInfo(f"Vérification du type d'heure : {str(merged_feed[table_name][col].head(2))}")
         DATE_COLUMNS = {
             "calendar": ["start_date", "end_date"],
-            "clanedar_dates": ["date"],
+            "calendar_dates": ["date"],
         }
         for table_name, cols in DATE_COLUMNS.items():
-            if table_name in all_feeds_data:
+            if table_name in merged_feed:
                 for col in cols:
-                    if col in all_feeds_data[table_name].columns:
-                        s = pd.to_datetime(all_feeds_data[table_name][col])
-                        all_feeds_data[table_name][col] = s.dt.strftime('%Y%m%d')
+                    if col in merged_feed[table_name].columns:
+                        s = pd.to_datetime(merged_feed[table_name][col])
+                        merged_feed[table_name][col] = s.dt.strftime('%Y%m%d')
        
         #Concaténer et sauvegarder dans le nouveau fichier ZIP
         

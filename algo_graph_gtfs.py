@@ -364,7 +364,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
 
         # Set the graph's CRS to Lambert-93 (EPSG:2154)
         if G.graph.get('crs') is not None:
-            G.graph["crs"] = edges.crs()
+            G.graph["crs"] = edges.crs
         
         
         

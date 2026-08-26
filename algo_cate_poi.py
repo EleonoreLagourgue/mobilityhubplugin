@@ -41,6 +41,10 @@ from qgis.core import *
 
 
 class CateServices(QgsProcessingAlgorithm):
+    INPUT = 'INPUT'
+    FIELD = 'FIELD'
+    CATEGORIES = 'CATEGORIES'
+    OUTPUT = 'OUTPUT'
 
 
     def name(self):
@@ -80,10 +84,156 @@ class CateServices(QgsProcessingAlgorithm):
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
     
-    def initAlgorithm(self, config):
-        pass
-    def processAlgorithm(self, parameters, context, feedback):
-        pass
+
 
     def createInstance(self):
         return CateServices()
+    
+    def initAlgorithm(self, config=None):
+
+        # 1. Couche source (ex : bpe47)
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.INPUT,
+                "Couche de points d'intérêt (ex : BPE)",
+                [QgsProcessing.TypeVectorPoint]
+            )
+        )
+
+        # 2. Colonne à classer (ex : sdom)
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.FIELD,
+                "Colonne contenant le code à classer (ex : sdom pour la bpe)",
+                parentLayerParameterName=self.INPUT,
+                type=QgsProcessingParameterField.Any
+            )
+        )
+
+        # 3. Table de correspondance éditable (remplace les CASE WHEN)
+        matrix_param = QgsProcessingParameterMatrix(
+            self.CATEGORIES,
+            "Table de correspondance des catégories",
+            numberRows=4,
+            headers=[
+                'Nom de la catégorie',
+                "Valeurs correspondantes (séparées par des virgules, % ou * = joker)",
+                'Seuil temps max (min)',
+                'Vitesse associée (km/h)'
+            ]
+        )
+        # Valeurs par défaut = reprise exacte de l'exemple SQL d'origine
+        matrix_param.setDefaultValue([
+            'Santé (Hôpitaux, Médecins)',              'D%',        '20', '4',
+            'Éducation (Écoles, Lycées)',               'C1,C2,C3',  '15', '4',
+            'Commerces et Alimentation',                 'B%',        '10', '4',
+            'Administrations et Services publics',       'A1',        '15', '4',
+            'Transport',                                  'E%',        '20', '4',
+            'Sport',                                      'F1',        '30', '4',
+            'Loisirs',                                    'F2',        '30', '4',
+            'Culture',                                    'F3',        '30', '4',   
+            'Tourisme',                                   'G%',        '30', '4',  
+        ])
+        self.addParameter(matrix_param,)
+
+        # 4. Couche de sortie
+        self.addParameter(
+            QgsProcessingParameterFeatureSink(
+                self.OUTPUT,
+                'Couche de POI classée'
+            )
+        )
+    
+    def processAlgorithm(self, parameters, context, feedback):
+        source = self.parameterAsSource(parameters, self.INPUT, context)
+        if source is None:
+            raise QgsProcessingException("Couche d'entrée invalide")
+
+        field_name = self.parameterAsString(parameters, self.FIELD, context)
+        matrix = self.parameterAsMatrix(parameters, self.CATEGORIES, context)
+        
+        #Vérification
+        if not matrix or len(matrix) % 4 != 0:
+            raise QgsProcessingException(
+                "La table de correspondance doit avoir 4 colonnes par ligne "
+                "(nom, valeurs, seuil, vitesse)."
+            )
+
+        # Reconstruction de la table de catégories (4 valeurs par ligne)
+        categories = []
+        for i in range(0, len(matrix), 4):
+            name = matrix[i]
+            values_raw = matrix[i + 1]
+            try:
+                threshold = int(matrix[i + 2])
+            except (ValueError, TypeError):
+                threshold = None
+            try:
+                speed = float(matrix[i + 3])
+            except (ValueError, TypeError):
+                speed = None
+
+            # '%' est accepté en plus de '*' pour rester proche de la syntaxe SQL LIKE
+            patterns = [
+                v.strip().replace('%', '*')
+                for v in values_raw.split(',') if v.strip()
+            ]
+            categories.append({
+                'id': (i // 4) + 1,
+                'nom': name,
+                'valeurs': patterns,
+                'poids': threshold,
+                'vitesse': speed
+            })
+
+        # Champs de sortie = champs d'origine + champs de classification
+        out_fields = QgsFields(source.fields())
+        out_fields.append(QgsField('category_id', QVariant.Int))
+        out_fields.append(QgsField('category_name', QVariant.String))
+        out_fields.append(QgsField('seuil_temps', QVariant.Int))
+        out_fields.append(QgsField('vitesse_kmh', QVariant.Double))
+
+        (sink, dest_id) = self.parameterAsSink(
+            parameters, self.OUTPUT, context,
+            out_fields, source.wkbType(), source.sourceCrs()
+        )
+        if sink is None:
+            raise QgsProcessingException("Impossible de créer la couche de sortie")
+
+        field_idx = source.fields().indexFromName(field_name)
+        if field_idx < 0:
+            raise QgsProcessingException(f"Champ '{field_name}' introuvable")
+
+        total = source.featureCount()
+
+        for current, feat in enumerate(source.getFeatures()):
+            if feedback.isCanceled():
+                break
+
+            value = feat[field_idx]
+            matched = None
+            if value is not None:
+                value_str = str(value)
+                for cat in categories:
+                    # 1ère catégorie du tableau qui matche = priorité à l'ordre
+                    # (équivalent à l'ordre des WHEN dans le CASE SQL)
+                    if any(fnmatch.fnmatchcase(value_str, p) for p in cat['patterns']):
+                        matched = cat
+                        break
+
+            new_feat = QgsFeature(out_fields)
+            new_feat.setGeometry(feat.geometry())
+            attrs = feat.attributes()
+            if matched:
+                attrs += [matched['id'], matched['name'], matched['threshold'], matched['speed']]
+            else:
+                attrs += [None, None, None, None]
+            new_feat.setAttributes(attrs)
+
+            sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
+
+            if total > 0:
+                feedback.setProgress(int(current / total * 100))
+
+        feedback.pushInfo(f"{current + 1} entités traitées.")
+        return {self.OUTPUT: dest_id}
