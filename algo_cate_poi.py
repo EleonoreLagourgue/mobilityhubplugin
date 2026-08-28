@@ -91,7 +91,6 @@ class CateServices(QgsProcessingAlgorithm):
     
     def initAlgorithm(self, config=None):
 
-        # 1. Couche source (ex : bpe47)
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.INPUT,
@@ -100,7 +99,6 @@ class CateServices(QgsProcessingAlgorithm):
             )
         )
 
-        # 2. Colonne à classer (ex : sdom)
         self.addParameter(
             QgsProcessingParameterField(
                 self.FIELD,
@@ -110,7 +108,6 @@ class CateServices(QgsProcessingAlgorithm):
             )
         )
 
-        # 3. Table de correspondance éditable (remplace les CASE WHEN)
         matrix_param = QgsProcessingParameterMatrix(
             self.CATEGORIES,
             "Table de correspondance des catégories",
@@ -136,7 +133,6 @@ class CateServices(QgsProcessingAlgorithm):
         ])
         self.addParameter(matrix_param,)
 
-        # 4. Couche de sortie
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,

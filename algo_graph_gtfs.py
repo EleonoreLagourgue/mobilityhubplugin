@@ -183,7 +183,13 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         edges = qgis_layer_to_gdf(li_layer)
         nodes= qgis_layer_to_gdf(no_layer)
         osm_nodes = nodes.set_index("osmid")
+        osm_nodes = osm_nodes.to_crs(2154)
         edges = edges.set_index(["u", "v", "key"])
+        if not edges.index.is_unique:
+            print("Not unique !")
+            edges = edges.reset_index()
+            edges['key'] = edges.groupby(['u', 'v']).cumcount(ascending = True)
+            edges = edges.set_index(["u", "v", "key"])
         G_osm = ox.graph_from_gdfs(osm_nodes, edges)
         feedback.pushInfo(f"crs des arêtes : {edges.crs}")
 
@@ -325,8 +331,11 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         #         Connexion des deux graphes
         # =============================================================================
         zone_etude = osm_nodes.geometry.union_all().convex_hull
-        
-        G_gtfs = nx.relabel_nodes(G, {node: i for i, node in enumerate(G.nodes())}, copy=True)
+        offset = max(G_osm.nodes(), default=-1) + 1
+        G_gtfs = nx.relabel_nodes(
+            G, {node: offset + i for i, node in enumerate(G.nodes())}, copy=True
+            )
+        #G_gtfs = nx.relabel_nodes(G, {node: i for i, node in enumerate(G.nodes())}, copy=True)
 
         # Get OSM node coordinates
         osm_coords = np.array(list(zip(osm_nodes["y"], osm_nodes["x"])))
@@ -352,7 +361,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
 
                 continue
             osm_node = osm_nodes.iloc[idx].name
-            point_u = Point(y, x)
+            point_u = Point(x,y)
             point_v = Point(osm_nodes.iloc[idx].y, osm_nodes.iloc[idx].x)
             
             #feedback.pushInfo(f"u : {str(point_u)}, v : {str(point_v)}")
