@@ -37,6 +37,7 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink)
 from qgis.core import *
+import fnmatch
 
 
 
@@ -178,7 +179,7 @@ class CateServices(QgsProcessingAlgorithm):
                 'id': (i // 4) + 1,
                 'nom': name,
                 'valeurs': patterns,
-                'poids': threshold,
+                'limite': threshold,
                 'vitesse': speed
             })
 
@@ -221,7 +222,7 @@ class CateServices(QgsProcessingAlgorithm):
             new_feat.setGeometry(feat.geometry())
             attrs = feat.attributes()
             if matched:
-                attrs += [matched['id'], matched['name'], matched['threshold'], matched['speed']]
+                attrs += [matched['id'], matched['nom'], matched['limite'], matched['vitesse']]
             else:
                 attrs += [None, None, None, None]
             new_feat.setAttributes(attrs)
