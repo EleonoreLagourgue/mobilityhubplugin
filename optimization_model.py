@@ -9,8 +9,11 @@ Le solveur ne dépend pas de QGIS : il peut donc être testé indépendamment.
 """
 from dataclasses import dataclass, field
 import pulp
+from collections import defaultdict
+import time
+import datetime
 
-
+import cProfile, pstats
 @dataclass
 class Itinerary:
     id: str
@@ -54,11 +57,19 @@ class WorkplaceProblemData :
     fixed_cost_mode: dict        # {mode: c_m^f}
     budget: float                 # B
 
+def solve_by_subregion():
+    pass
 
-def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300):
+def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300,
+                    allow_unimodal_cs = False):
     """Résout le MIP d'accessibilité aux POI et renvoie les décisions."""
+    
+    used_hubs = {l for it in data.itineraries for (l, m) in it.hubs_required}
+    hub_locations = [l for l in data.hub_locations if l in used_hubs]
+    
+    
     prob = pulp.LpProblem("poi_accessibility", pulp.LpMaximize)
-
+    t0 = time.time()
     # --- variables ---
     y = {(l, m): pulp.LpVariable(f"y_{l}_{m}", cat="Binary")
          for l in data.hub_locations for m in data.modes}
@@ -69,10 +80,13 @@ def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300):
 
     x = {it.id: pulp.LpVariable(f"x_{it.id}", cat="Binary") for it in data.itineraries}
     z = {it.id: pulp.LpVariable(f"z_{it.id}", cat="Binary") for it in data.itineraries}
-
+    feedback.pushInfo("Initialisation des variables")
+    
     nodes_pois = {(it.node, it.poi_category) for it in data.itineraries}
     a = {np_: pulp.LpVariable(f"a_{np_[0]}_{np_[1]}", cat="Binary") for np_ in nodes_pois}
-
+    
+    
+        
     # --- Objectif ---
     total_pop = sum(data.population.values())
     n_cat = len(data.poi_categories)
@@ -82,12 +96,20 @@ def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300):
     feedback.pushInfo("Objectif ajouté")
 
     # --- contraintes : par itinéraire ---
+    parking_by_hub_mode = defaultdict(list)  
+    by_node_cat = defaultdict(list)
     for it in data.itineraries:
-        for (l, m) in it.hub_requirements:
+        by_node_cat[(it.node, it.poi_category)].append(it)
+        for (l, m) in it.hubs_required:
+            if not allow_unimodal_cs and ("cs" in l or "cs" in m):
+                prob += x[it.id] == 0
             prob += x[it.id] <= y[(l, m)]                       # (2)
-        prob += z[it.id] <= x[it.id]                              # (3)
-
-    for (node, cat) in nodes_pois:
+        prob += z[it.id] <= x[it.id]                            # (3)        
+        for (l, m), demand in it.parking_demand.items():
+            if demand:  # ignore les 0 explicites
+                parking_by_hub_mode[(l, m)].append((it.id, demand))
+    
+    for (node, cat), its in by_node_cat.items():
         its = [it for it in data.itineraries if it.node == node and it.poi_category == cat]
         prob += pulp.lpSum(z[it.id] for it in its) == 1           # (4)
         for it in its:
@@ -95,10 +117,12 @@ def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300):
             prob += it.travel_time * z[it.id] <= t_hat + data.big_m * (1 - a[(node, cat)])  # (5)
 
     # --- contrainte : places de parking ---
-    for l in data.hub_locations:
+    
+    for l in hub_locations:
         for m in data.modes:
+            pairs = parking_by_hub_mode.get((l, m), [])
             demand = pulp.lpSum(
-                it.parking_demand.get((l, m), 0) * x[it.id] for it in data.itineraries
+                d * x[it.id] for it_id, d in pairs
             )
             prob += demand <= u[(l, m)]
 
@@ -116,7 +140,8 @@ def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300):
     feedback.pushInfo("Contraintes ajoutées")
 
     # --- résolution ---
-    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s)
+    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s,
+                               threads=4, gapRel=0.02,)
     prob.solve(solver)
     #Vérif
     for v in prob.variables():
@@ -136,8 +161,16 @@ def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300):
         "itineraries_used": itineraries_used,
     }
 
-def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: int = 300):
+def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: int = 300,
+                          allow_unimodal_cs = False):
     prob = pulp.LpProblem("workplace_accessibility", pulp.LpMaximize)
+    used_hubs = {l for it in data.itineraries for (l, m) in it.hubs_required}
+    hub_locations = [l for l in data.hub_locations if l in used_hubs]
+    profiler = cProfile.Profile()
+    profiler.enable()
+    
+    feedback.pushInfo(f"Hubs candidats : {len(data.hub_locations)} -> {len(hub_locations)} réellement utilisés")
+    
     y = {(l, m): pulp.LpVariable(f"y_{l}_{m}", cat="Binary")
          for l in data.hub_locations for m in data.modes}
     e = {l: pulp.LpVariable(f"e_{l}", lowBound=0, upBound=data.fixed_cost_hub)
@@ -147,15 +180,16 @@ def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: in
     x = {it.id: pulp.LpVariable(f"x_{it.id}", cat="Binary") for it in data.itineraries}
 
     od_pairs = {(it.origin, it.destination) for it in data.itineraries}
+    t0 = datetime.datetime.now()
+    print("Temps 0",t0)
     
-
     # --- objectif (13) ---
     #obj_var = pulp.LpVariable("obj_wp", lowBound=0, upBound=1)
     feedback.pushInfo(f"Vérification dictionnaire : {type(data.commuting_volume)}")
     feedback.pushInfo(f"Exemple clé commuting_volume : {list(data.commuting_volume.keys())[:3]}")
     feedback.pushInfo(f"Types clé : {[(type(k[0]), type(k[1])) for k in list(data.commuting_volume.keys())[:3]]}")
-    feedback.pushInfo(f"Exemple od_pairs : {list(od_pairs)[:3]}")
-    feedback.pushInfo(f"Types od_pairs : {[(type(o[0]), type(o[1])) for o in list(od_pairs)[:3]]}")
+    # feedback.pushInfo(f"Exemple od_pairs : {list(od_pairs)[:3]}")
+    # feedback.pushInfo(f"Types od_pairs : {[(type(o[0]), type(o[1])) for o in list(od_pairs)[:3]]}")
 
     # for od in od_pairs:
     #     feedback.pushInfo(f"Volume par od : {data.commuting_volume.get(od, 0)}")
@@ -172,37 +206,65 @@ def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: in
     #total_flux = sum(data.commuting_volume.values())
     feedback.pushInfo("Objectif ajouté")
     # --- contrainte (14) : feasibilité selon hubs/modes choisis ---
+    
+    by_od = defaultdict(list)
+    parking_by_hub_mode = defaultdict(list)  
     for it in data.itineraries:
+        by_od[(it.origin, it.destination)].append(it)
         for (l, m) in it.hubs_required:
+            if not allow_unimodal_cs and ("cs" in l or "cs" in m):
+                prob += x[it.id] == 0
             prob += x[it.id] <= y[(l, m)]
-
+        for (l, m), demand in it.parking_demand.items():
+            if demand:  # ignore les 0 explicites
+                parking_by_hub_mode[(l, m)].append((it.id, demand))
+            
+    t1 = datetime.datetime.now()
+    print("Temps 2", t1)
+    print("Temps entre 1 et 2", t1-t0)
     # --- contrainte (15) : exactement un itinéraire choisi par connexion (i,j) ---
-    for (i, j) in od_pairs:
+    for (i, j), its in by_od.items():
         its_ij = [it for it in data.itineraries if it.origin == i and it.destination == j]
         prob += pulp.lpSum(x[it.id] for it in its_ij) == 1
-
+        
     # --- contrainte (16) : places de parking ---
-    for l in data.hub_locations:
+    for l in hub_locations:
         for m in data.modes:
+            pairs = parking_by_hub_mode.get((l, m), [])
             demand = pulp.lpSum(
-                it.parking_demand.get((l, m), 0) * x[it.id] for it in data.itineraries
+                d * x[it.id] for it_id, d in pairs
             )
             prob += demand <= u[(l, m)]
-
+    profiler.disable()
+    stats = pstats.Stats(profiler).sort_stats('cumulative')
+    stats.print_stats(15)
+    t2 = datetime.datetime.now()
+    print("Temps 3", t2)
+    print("Temps entre 3 et 2", t2-t1)
+    feedback.pushInfo(f"Avant bloc budget : {len(prob.variables())} variables, {len(prob.constraints)} contraintes")
+    feedback.pushInfo(f"len(data.modes) = {len(data.modes)}")
     # --- contraintes (17)-(19) : coûts d'installation / budget ---
-    for l in data.hub_locations:
+    for l in hub_locations:
         for m in data.modes:
             prob += data.fixed_cost_hub * y[(l, m)] <= e[l]
         prob += e[l] <= data.fixed_cost_hub
-
+    profiler.disable()
+    stats = pstats.Stats(profiler).sort_stats('cumulative')
+    stats.print_stats(15)
+    t3 = datetime.datetime.now()
+    print("Temps 4", t3)
+    print("Temps entre 3 et 4", t3-t2)
     prob += pulp.lpSum(
         e[l] + pulp.lpSum(data.fixed_cost_mode[m] * u[(l, m)] for m in data.modes)
-        for l in data.hub_locations
+        for l in hub_locations
     ) <= data.budget
     feedback.pushInfo("Contraintes ajoutées")
 
     # --- résolution ---
-    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s)
+    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s,
+                               threads=4, gapRel=0.02,)
+    t1 = time.time()
+    print(t1)
     prob.solve(solver)
     feedback.pushInfo("Résolution faite")
     status = pulp.LpStatus[prob.status]

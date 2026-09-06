@@ -32,18 +32,23 @@ __revision__ = '$Format:%H$'
 
 from qgis.core import QgsProcessingProvider
 from .algo_shapes import CreaShapesAlgorithm
-from .algo_poi import LocateHubsPOIAlgorithm
-from .algo_workplace import LocateHubsWorkplaceAlgorithm
+
+from .algo_merge_gtfs import MergeGTFS
+from .algo_decoup_gtfs import DecoupeGTFSAlgorithm
+from.algo_od import FormateODmatrix
+from .algo_cate_poi import CateServices
+
 from .algo_graph  import BuildGraphAlgorithm
+from .algo_graph_gtfs import BuildGraphGTFSAlgorithm
+from .algo_pente import AddGradeAlgorithm
+
 from .algo_matricetemps  import MatriceTemps
 from .algo_itineraires_wp  import BuildItinerariesWP
 from .algo_itineraires_poi import BuildItinerariesPOI
-from .algo_pente import AddGradeAlgorithm
-from.algo_od import FormateODmatrix
-from .algo_decoup_gtfs import DecoupeGTFSAlgorithm
-from .algo_graph_gtfs import BuildGraphGTFSAlgorithm
-from .algo_merge_gtfs import MergeGTFS
+from .algo_crea_hubs import CreaHubsPot
 
+from .algo_poi import LocateHubsPOIAlgorithm
+from .algo_workplace import LocateHubsWorkplaceAlgorithm
 
 class MobilityHubPluginProvider(QgsProcessingProvider):
 
@@ -65,18 +70,25 @@ class MobilityHubPluginProvider(QgsProcessingProvider):
         Loads all algorithms belonging to this provider.
         """
         self.addAlgorithm(CreaShapesAlgorithm())
-        self.addAlgorithm(LocateHubsPOIAlgorithm())
-        self.addAlgorithm(LocateHubsWorkplaceAlgorithm())
+        
+        
+        self.addAlgorithm(FormateODmatrix())
+        self.addAlgorithm(DecoupeGTFSAlgorithm())
+        self.addAlgorithm(MergeGTFS())
+        self.addAlgorithm(CateServices())
+        
+        self.addAlgorithm(BuildGraphGTFSAlgorithm())
         self.addAlgorithm(BuildGraphAlgorithm())
+        self.addAlgorithm(AddGradeAlgorithm())
+
+        
         self.addAlgorithm(MatriceTemps())
         self.addAlgorithm(BuildItinerariesWP())
         self.addAlgorithm(BuildItinerariesPOI())
-        self.addAlgorithm(AddGradeAlgorithm())
-        self.addAlgorithm(FormateODmatrix())
-        self.addAlgorithm(DecoupeGTFSAlgorithm())
-        self.addAlgorithm(BuildGraphGTFSAlgorithm())
-        self.addAlgorithm(MergeGTFS())
-
+        self.addAlgorithm(CreaHubsPot())
+        
+        self.addAlgorithm(LocateHubsPOIAlgorithm())
+        self.addAlgorithm(LocateHubsWorkplaceAlgorithm())
 
         
         # add additional algorithms here

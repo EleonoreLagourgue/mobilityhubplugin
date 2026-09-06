@@ -67,7 +67,7 @@ from mobilityhubplugin.conversions import make_wp_itinerary_fields, write_wp_iti
 
 TRANSFER_TIME = 5   #min
 MAX_TRANSFERS = 2
-MODES = ["pt", "bs", "cs", "walk", "rs"]  # TC, vélo, voiture partagée
+MODES = ["pt", "bs", "cs", "walk", "rs","c"]  # TC, vélo, voiture partagée, voiture seule
 
 
 
@@ -164,7 +164,10 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                                                       "Colonne id pour la couche des hubs",
                                                       parentLayerParameterName=self.HUBS))
         
-        self.addParameter(QgsProcessingParameterFile(self.OD_MATRIX, "Matrice OD"))
+        self.addParameter(
+            QgsProcessingParameterFile(
+                self.OD_MATRIX, "Matrice OD",
+                extension = "csv"))
         self.addParameter(QgsProcessingParameterString(self.ORIGINE, 
                                                        "Colonne origine"))
         self.addParameter(QgsProcessingParameterString(self.DESTINATION, 
@@ -218,7 +221,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         ori = self.parameterAsString(parameters, self.ORIGINE,context)
         dest = self.parameterAsString(parameters, self.DESTINATION,context)
         cptr = self.parameterAsString(parameters, self.COMPTEUR,context)
-
+        
 
 
         feedback.pushInfo("Construction des itinéraires potentiels (routage + élimination des dominés)...")
@@ -243,7 +246,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         iid = 0 #compteur pour créer l'id de chaque itinéraire
         
         #Lecture matrice od
-        od = pd.read_csv(od_path,  sep=";")
+        od = pd.read_csv(od_path, index_col=0, quotechar='"')
         feedback.pushInfo(f"Colonnes lues : {od.columns.tolist()}")
         feedback.pushInfo(f"Index lu : {od.index.tolist()[:5]}")
         feedback.pushInfo(f"Shape : {od.shape}")

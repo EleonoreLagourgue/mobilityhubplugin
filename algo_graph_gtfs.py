@@ -116,15 +116,13 @@ def compute_speed_from_stop_times(stop_sequence_df, stops_gdf, feedback=None, tr
         pt_v = stops_gdf.loc[stops_gdf.stop_id == v['stop_id'], 'geometry'].values[0]
         if delta_minutes <= 0:
             # Probablement du TAD
-            feedback.pushInfo(f"Départ : {dep} vs Arrivée : {arr}")
+            if feedback:
+                feedback.pushInfo(f"Départ : {dep} vs Arrivée : {arr}")
             dist_m = distance((pt_u.y, pt_u.x), (pt_v.y, pt_v.x)).m
             delta_minutes = (dist_m / 1000) / 22 * 60  # vitesse par défaut 22 km/h
             if feedback and trip_id:
                 feedback.pushInfo(f"[trip {trip_id}] horaire invalide u={u['stop_id']} "
-                                   f"v={v['stop_id']}, estimation à {delta_minutes:.1f} min")
-
-            continue
-        
+                                   f"v={v['stop_id']}, estimation à {delta_minutes:.1f} min")      
         
 
 
@@ -190,14 +188,16 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
             edges = edges.reset_index()
             edges['key'] = edges.groupby(['u', 'v']).cumcount(ascending = True)
             edges = edges.set_index(["u", "v", "key"])
-        G_osm = ox.graph_from_gdfs(osm_nodes, edges)
+        G_osm = ox.graph_from_gdfs(osm_nodes, edges) #graphe piéton
         feedback.pushInfo(f"crs des arêtes : {edges.crs}")
 
         if li_crs != "EPSG:2154":
             G_osm = ox.project_graph(G_osm, to_crs="EPSG:2154")
             feedback.pushInfo(f"Réseau piéton reprojeté de {li_crs} vers EPSG:2154")
         
-        
+        # =============================================================================
+        #         Création du graphe simple GTFS
+        # =============================================================================
         #Load gtfs with partridge
         feed = ptg.load_geo_feed(zip_path, view={})
         # Extract GTFS tables
@@ -245,6 +245,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         # )['trip_id']
         # )]
         # feedback.pushInfo(f"Horaires invalides : {len(trips_sans_horaire_valide)} / {len(trips)} trips concernés")
+        
         # Create edges from trips, grouped by shape_id
         for shape_id, group in trips.groupby('shape_id'):
             if shape_id not in shapes.index or shapes[shape_id] is None:
@@ -288,10 +289,10 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                 except Exception as e:
                     feedback.pushWarning(f"[shape {shape_id}] projection échouée u={u} v={v}: {e}")
                     segment = LineString([point_u, point_v])
-                length = segment.length
+                #length = segment.length
                 
                 delta_hours = seg['travel_time_min'] / 60
-                speed_kph = length / delta_hours if delta_hours > 0 else 22.0
+                speed_kph = (length / 1000) / delta_hours if delta_hours > 0 else 22.0
                 if not G.has_edge(u, v, key=trip_id):
                     G.add_edge(
                         u, v,
@@ -313,6 +314,7 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
         
         transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2154", always_xy=True).transform
         # Set the graph's CRS to Lambert-93 (EPSG:2154)
+        # On reprojette les lignes puis les noeuds
         if G.graph.get('crs') != "EPSG:2154":
             for u, v, k, data in G.edges(keys=True, data=True):
                 if 'geometry' in data and data['geometry'] is not None:
@@ -325,8 +327,10 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
                 feedback.pushInfo(f"edge geometry bounds: {data['geometry'].bounds}")
                 node0 = list(G.nodes(data=True))[0]
                 feedback.pushInfo(f"node x,y: {node0[1].get('x')}, {node0[1].get('y')}")
+                
         # n_transit = sum(1 for _, _, d in G.edges(data=True) if d.get('mode') == 'transit')
         # feedback.pushInfo(f"Arêtes transit créées avant compose: {n_transit}")
+        
         # =============================================================================
         #         Connexion des deux graphes
         # =============================================================================
@@ -357,12 +361,12 @@ class BuildGraphGTFSAlgorithm(QgsProcessingAlgorithm):
             point_stop = Point(x, y)
             #Vérification distance
             if not zone_etude.contains(point_stop):
-                feedback.pushWarning(f"Arrêt {stop_id} ignoré : nœud piéton le plus proche à {dist:.0f} m")
+                feedback.pushWarning(f"Arrêt {stop_id} ignoré : noeud piéton le plus proche à {dist:.0f} m")
 
                 continue
             osm_node = osm_nodes.iloc[idx].name
             point_u = Point(x,y)
-            point_v = Point(osm_nodes.iloc[idx].y, osm_nodes.iloc[idx].x)
+            point_v = Point(osm_nodes.iloc[idx].x, osm_nodes.iloc[idx].y)
             
             #feedback.pushInfo(f"u : {str(point_u)}, v : {str(point_v)}")
 

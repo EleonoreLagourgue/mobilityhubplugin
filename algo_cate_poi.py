@@ -70,7 +70,7 @@ class CateServices(QgsProcessingAlgorithm):
         Returns the name of the group this algorithm belongs to. This string
         should be localised.
         """
-        return 'Traitements annexes'
+        return 'Formatage préliminaire'
 
     def groupId(self):
         """
@@ -80,7 +80,7 @@ class CateServices(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'traitements_annexes'
+        return 'formatage'
     
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)

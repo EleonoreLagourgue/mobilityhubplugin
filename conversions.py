@@ -198,12 +198,12 @@ def get_available_modes(feedback, itineraries_src, extra_modes=None):
     """
     modes = set()
     for f in itineraries_src.getFeatures():
-        feedback.pushInfo(f["hubs_required"])
+        #feedback.pushInfo(f["hubs_required"])
         hubs_required = f["hubs_required"]
         if isinstance(hubs_required, str):
             hubs_required = json.loads(hubs_required)
         for couple in hubs_required:
-            feedback.pushInfo(str(couple))
+            #feedback.pushInfo(str(couple))
 
             l,m= couple
             modes.add(m)
@@ -381,9 +381,18 @@ def build_workplace_problem_data(feedback,hubs_src, itineraries_src,nodes_src, o
     hub_locations = [f"hub_{f[hub_id_field]}" for f in hubs_src.getFeatures()]
 
     node = [f"pop_{f[node_id_field]}" for f in nodes_src.getFeatures()]
-
+   
+    
     itineraries = read_wp_itineraries_from_source(feedback,itineraries_src)
     hub_locations.extend(node)
+    
+    node_ids_from_nodes_src = {f"pop_{f[node_id_field]}" for f in nodes_src.getFeatures()}
+    hub_or_node_refs_in_itineraries = {
+    l for it in itineraries for (l, m) in it.hubs_required
+    }
+    missing = hub_or_node_refs_in_itineraries - set(hub_locations) - node_ids_from_nodes_src
+    feedback.pushInfo(f"Références manquantes dans hub_locations : {missing}")
+
 
     return WorkplaceProblemData(
         commuting_volume=commuting_volume,

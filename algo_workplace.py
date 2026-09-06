@@ -1,4 +1,5 @@
 from qgis.core import (
+    QgsProcessing,
     QgsProcessingAlgorithm,
     QgsProcessingParameterFeatureSource,
     QgsProcessingParameterNumber,
@@ -6,6 +7,7 @@ from qgis.core import (
     QgsProcessingParameterFile,
     QgsProcessingParameterField,
     QgsProcessingParameterEnum,
+    QgsProcessingParameterBoolean,
     QgsFeatureSink,
     QgsVectorLayer,
     QgsProcessingFeatureSource,
@@ -66,31 +68,49 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
         return "mobility_hub"
 
     def initAlgorithm(self, config=None):
-        self.addParameter(QgsProcessingParameterFeatureSource(self.NODES, "Nœuds de population (points)"))
-        self.addParameter(QgsProcessingParameterField(self.COLPOP, 
-                                                      "Colonne id pour la couche de population",
-                                                      parentLayerParameterName=self.NODES))
-        self.addParameter(QgsProcessingParameterField(self.IDPOP, 
-                                                      "Colonne population pour la couche de population",
-                                                      parentLayerParameterName=self.NODES))
-        self.addParameter(QgsProcessingParameterFeatureSource(self.HUBS, 
-                                                              "Hubs candidats (points)"))
-        self.addParameter(QgsProcessingParameterField(self.IDHUB, 
-                                              "Colonne id pour la couche des hubs",
-                                              parentLayerParameterName=self.HUBS))        
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.NODES, "Nœuds de population (points)",
+                [QgsProcessing.TypeVectorPoint]))
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.COLPOP, 
+                "Colonne id pour la couche de population",
+                parentLayerParameterName=self.NODES))
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.IDPOP, 
+                "Colonne population pour la couche de population",
+                parentLayerParameterName=self.NODES))
+        
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.HUBS, 
+                "Hubs candidats (points)",
+                [QgsProcessing.TypeVectorPoint]))
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.IDHUB, 
+                "Colonne id pour la couche des hubs",
+                parentLayerParameterName=self.HUBS)) 
+        
         self.addParameter(QgsProcessingParameterFile(self.OD_MATRIX, "Matrice OD"))
         self.addParameter(QgsProcessingParameterFile(self.ITINERAIRES, 
                                                               "Itinéraires potentiels"))
 
-        self.addParameter(QgsProcessingParameterNumber(self.BUDGET, "Budget (€)", defaultValue=150000))
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.BUDGET, "Budget (€)", defaultValue=150000))
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.ALLOW_CS, "Autopartage possible", defaultValue=False))
         
-        
-        self.addParameter(QgsProcessingParameterEnum(self.ALLOW_CS,
-                                                 "Direction par défaut",
-                                                 options =self.LISTE,
-                                                 allowMultiple=False,
-                                                 optional = True,
-                                                 defaultValue= self.LISTE.index("Non")))
+        # self.addParameter(QgsProcessingParameterEnum(self.ALLOW_CS,
+        #                                          "Direction par défaut",
+        #                                          options =self.LISTE,
+        #                                          allowMultiple=False,
+        #                                          optional = True,
+        #                                          defaultValue= self.LISTE.index("Non")))
         self.addParameter(QgsProcessingParameterFeatureSink(self.OUTPUT, "Hubs sélectionnés"))
 
        
@@ -101,12 +121,16 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
         od_path = self.parameterAsFile(parameters, self.OD_MATRIX, context)
         itineraries_file = self.parameterAsFile(parameters, self.ITINERAIRES, context)
         budget = self.parameterAsDouble(parameters, self.BUDGET, context)#float
+        allow_unimodal_cs = self.parameterAsBool(parameters, self.ALLOW_CS, context)
         
+        node_id = self.parameterAsString(parameters, self.COLPOP, context)
+        hub_id = self.parameterAsString(parameters, self.IDHUB, context)
+
         #id node, hubs à remettre en params
         #od : origine_id, destination_id, volume => faire une fonction formatage
         od = pd.read_csv(od_path,  sep=",", index_col=0)
         feedback.pushInfo(f"Colonnes lues : {od.columns.tolist()}")
-        feedback.pushInfo(f"Type origine lu : {od['origine_id'][:5]}")
+        feedback.pushInfo(f"Type origine lu : {od['origine_id'][:2]}")
 
         layer = QgsVectorLayer(itineraries_file, 'input_layer', 'ogr')
         if not layer.isValid():
@@ -117,15 +141,19 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
         feedback.pushInfo("Construction des data...")
         data = build_workplace_problem_data(feedback,
             hubs_src, itineraries_src, nodes_src, od,
+            node_id_field = node_id,
+            hub_id_field = hub_id,
             fixed_cost_hub=1000.0,
-            fixed_cost_mode={"bs": 300.0, "cs": 7500.0, "pt": 0.0},
+            fixed_cost_mode={"bs": 800.0, "cs": 1500.0, "pt": 0.0}, #abri à vélo, parking+borne de recharge
             budget=budget,
         )
-        feedback.pushInfo(f"Modes détectés : {data.modes}")
-        feedback.pushInfo(f"Hubs détectés : {data.hub_locations}")
-
+        feedback.pushInfo("Fin construction des data")
+        #feedback.pushInfo(f"Modes détectés : {data.modes}")
+        #feedback.pushInfo(f"Hubs détectés : {data.hub_locations}")
+        
+        #Calcul d'optimisation
         feedback.pushInfo(f"{len(data.itineraries)} itinéraires potentiels générés. Résolution du MIP...")
-        result = solve_workplace_model(feedback,data, time_limit_s=300)
+        result = solve_workplace_model(feedback,data, time_limit_s=300, allow_unimodal_cs=allow_unimodal_cs)
         feedback.pushInfo(f"Statut : {result['status']}")
         feedback.pushInfo(f"Accessibilité obtenue : {result['objective']:.3f}")
 
@@ -138,8 +166,8 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
         )
         
         feedback.pushInfo(str(result["hubs"])[:25])
-        hub_features = {f"hub_{f['fid']}": f for f in hubs_src.getFeatures()}
-        node_features = {f"pop_{f['code_insee']}": f for f in nodes_src.getFeatures()}
+        hub_features = {f"hub_{f[hub_id]}": f for f in hubs_src.getFeatures()}
+        node_features = {f"pop_{f[node_id]}": f for f in nodes_src.getFeatures()}
         hub_features.update(node_features)
         feedback.pushInfo(str(hub_features))
 

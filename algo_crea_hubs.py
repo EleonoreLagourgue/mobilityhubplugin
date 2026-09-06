@@ -49,11 +49,16 @@ from qgis import processing
 from mobilityhubplugin.conversions import ( 
                          gdf_to_qgsfields,
                          write_gdf_to_sink,
-                         gdf_from_layer_arrow)
+                         gdf_from_layer_arrow,
+                         gdf_geom_to_qgs_wkbtype)
 
 import networkx as nx
 import osmnx as ox
+import numpy as np
 from scipy.stats import gaussian_kde
+import geopandas as gpd
+from skimage.feature import peak_local_max
+
 
 class CreaHubsPot(QgsProcessingAlgorithm):
     """
@@ -96,7 +101,7 @@ class CreaHubsPot(QgsProcessingAlgorithm):
         return "Crée une matrice de temps de trajet"
 
     def group(self):
-        return "Formatage préliminaire"
+        return "Analyse réseau"
     def groupId(self):
         """
         Returns the unique ID of the group this algorithm belongs to. This
@@ -105,7 +110,7 @@ class CreaHubsPot(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'formatage'
+        return 'analyse_reseau'
     
     
     def initAlgorithm(self, config):
@@ -155,79 +160,115 @@ class CreaHubsPot(QgsProcessingAlgorithm):
                 [QgsProcessing.SourceType.TypeVectorPoint],
                 optional = True))
         
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.POP, 
+                "Données de population",
+                [QgsProcessing.SourceType.TypeVectorPolygon],
+                optional = True))
+    
         
         
-     def processAlgorithm(self, parameters, context, feedback):
+        
+    def processAlgorithm(self, parameters, context, feedback):
+        
          
-         """
-         Here is where the processing itself takes place.
-         """
-         lignes_layer = self.parameterAsVectorLayer(parameters, self.RESEAU, context)#QgsProcessingFeatureSource
-         nodes_layer = self.parameterAsVectorLayer(parameters, self.NODES, context)#QgsProcessingFeatureSource
-
-         services_layer = self.parameterAsVectorLayer(parameters, self.SERVICES, context)#QgsProcessingFeatureSource
          
+        """
+        Here is where the processing itself takes place.
+        """
+        lignes_layer = self.parameterAsVectorLayer(parameters, self.RESEAU, context)#QgsProcessingFeatureSource
+        nodes_layer = self.parameterAsVectorLayer(parameters, self.NODES, context)#QgsProcessingFeatureSource
+    
+        services_layer = self.parameterAsVectorLayer(parameters, self.SERVICES, context)#QgsProcessingFeatureSource
+        services_layer = self.parameterAsVectorLayer(parameters, self.ZONE_ACT, context)#QgsProcessingFeatureSource
+        pop_layer = self.parameterAsVectorLayer(parameters, self.POP, context)
         # =============================================================================
         #        Calcul centralité des routes  
         # =============================================================================
-         edges = gdf_from_layer_arrow(lignes_layer)
-         nodes = gdf_from_layer_arrow(nodes_layer)
-         edges = gdf_from_layer_arrow(lignes_layer)
-         nodes = nodes.set_index("osmid")
-         edges = edges.set_index(["u", "v", "key"])
-         G = ox.graph_from_gdfs(nodes, edges)
-         G_undirected = ox.convert.to_undirected(G)
+        edges = gdf_from_layer_arrow(lignes_layer)
+        nodes = gdf_from_layer_arrow(nodes_layer)
+        edges = gdf_from_layer_arrow(lignes_layer)
+        nodes = nodes.set_index("osmid")
+        edges = edges.set_index(["u", "v", "key"])
+        G = ox.graph_from_gdfs(nodes, edges)
+        G_undirected = ox.convert.to_undirected(G)
+    
+        bc = nx.betweenness_centrality(G_undirected, weight="length", normalized=True)
+        nx.set_node_attributes(G, bc, "betweenness")
+         
+         
+        # =============================================================================
+        #          Calcul concentration des services
+        # =============================================================================
+        services = gdf_from_layer_arrow(services_layer)
+        x = services.geometry.x
+        y = services.geometry.y
+        xy = np.vstack([x, y])
+        kde = gaussian_kde(xy, bw_method=0.15)
+        
+        xmin, ymin, xmax, ymax = services.total_bounds
+        margin_x = (xmax - xmin) * 0.05
+        margin_y = (ymax - ymin) * 0.05
+        xmin, xmax = xmin - margin_x, xmax + margin_x
+        ymin, ymax = ymin - margin_y, ymax + margin_y
+        xx, yy = np.mgrid[xmin:xmax:complex(grid_size), ymin:ymax:complex(grid_size)]
+        positions = np.vstack([xx.ravel(), yy.ravel()])
+        
+        print("Calcul du KDE sur la grille (peut prendre quelques secondes)...")
+        density = np.reshape(kde(positions), xx.shape)
+        cell_size_x = (xmax - xmin) / grid_size
+        min_distance_px = max(1, int(min_distance_m / cell_size_x))
+        
+        relative_threshold = 0.15
 
-         bc = nx.betweenness_centrality(G_undirected, weight="length", normalized=True)
-         nx.set_node_attributes(G, bc, "betweenness")
-         
-         
-         services = gdf_from_layer_arrow(services_layer)
-         x = services.geometry.x
-         y = services.geometry.y
-         xy = np.vstack([x, y])
-         kde = gaussian_kde(xy, bw_method=0.15)
-         
-         xmin, ymin, xmax, ymax = gdf_points.total_bounds
-         margin_x = (xmax - xmin) * 0.05
-         margin_y = (ymax - ymin) * 0.05
-         xmin, xmax = xmin - margin_x, xmax + margin_x
-         ymin, ymax = ymin - margin_y, ymax + margin_y
-         xx, yy = np.mgrid[xmin:xmax:complex(grid_size), ymin:ymax:complex(grid_size)]
-         positions = np.vstack([xx.ravel(), yy.ravel()])
-         
-         print("Calcul du KDE sur la grille (peut prendre quelques secondes)...")
-         density = np.reshape(kde(positions), xx.shape)
-         cell_size_x = (xmax - xmin) / grid_size
-         min_distance_px = max(1, int(min_distance_m / cell_size_x))
-         
-         coordinates = peak_local_max(
-             density,
-             min_distance=min_distance_px,
-             threshold_rel=relative_threshold,
-             )
-         peaks = []
-         for row, col in coordinates:
-             
-             x = xx[row, col]
-             y = yy[row, col]
-             peaks.append({
-                "geometry": Point(x, y),
-                "density": float(density[row, col])})
+        coordinates = peak_local_max(
+            density,
+            min_distance=min_distance_px,
+            threshold_rel=relative_threshold,
+            )
+        peaks = []
+        for row, col in coordinates:
+            
+            x = xx[row, col]
+            y = yy[row, col]
+            peaks.append({
+               "geometry": Point(x, y),
+               "density": float(density[row, col])})
+       
+        gdf_peaks = gpd.GeoDataFrame(peaks)
+        # Trier par intensité décroissante (le centre-ville principal en premier)
+        gdf_peaks = gdf_peaks.sort_values("density", ascending=False).reset_index(drop=True)
+        gdf_peaks["rang"] = gdf_peaks.index + 1
         
-         gdf_peaks = gpd.GeoDataFrame(peaks)
-         # Trier par intensité décroissante (le centre-ville principal en premier)
-         gdf_peaks = gdf_peaks.sort_values("density", ascending=False).reset_index(drop=True)
-         gdf_peaks["rang"] = gdf_peaks.index + 1
-         
-         x = gdf_peaks.geometry.x
-         y = gdf_peaks.geometry.y 
-         
-         gdf_peaks["ne_idx"] = ox.nearest_edges(G, x,y)
+        x = gdf_peaks.geometry.x
+        y = gdf_peaks.geometry.y 
         
-         print(f"{len(gdf_peaks)} pic(s) de densité détecté(s) = centre(s)-ville(s) candidat(s).")
-         
-         
+        gdf_peaks["ne_idx"] = ox.nearest_edges(G, x,y) #renvoie les 3
+       
+        print(f"{len(gdf_peaks)} pic(s) de densité détecté(s) = centre(s)-ville(s) candidat(s).")
+        cand =[]
+        for cluster in gdf_peaks.iterrows():
+            u,v,key = cluster["ne_idx"]
+            edge_data = G.edges[u,v,key]
+            if cluster["rang"] >6 and edge_data["betweenness"] >5:
+                cand.append(cluster)
+        
+        cand_gdf = gpd.GeoDataFrame(cand, geometry ="geometry", crs = gdf_peaks.crs)   
+        
+        crs = lignes_layer.crs()  # on réutilise le CRS de la couche d'entrée
+
+        # --- Sink lignes ---
+        lines_fields = gdf_to_qgsfields(cand_gdf)
+        lines_wkbtype = gdf_geom_to_qgs_wkbtype(cand_gdf)
+        (sink_lignes, dest_id_lignes) = self.parameterAsSink(
+            parameters, self.LIGNES, context,
+            lines_fields, lines_wkbtype, crs
+        )
+        write_gdf_to_sink(cand_gdf, sink_lignes)
+    
+       
+        return {self.OUTPUT: dest_id_lignes}
          
          
          

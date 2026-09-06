@@ -31,6 +31,7 @@ __revision__ = '$Format:%H$'
 
 
 from qgis.core import (
+    QgsProcessing,
     QgsProcessingAlgorithm,
     QgsProcessingParameterFeatureSource,
     QgsProcessingParameterNumber,
@@ -38,6 +39,7 @@ from qgis.core import (
     QgsProcessingParameterField,
     QgsProcessingParameterFile,
     QgsProcessingParameterEnum,
+    QgsProcessingParameterBoolean,
     QgsFeatureSink,
     QgsFields,
     QgsField,
@@ -89,43 +91,63 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
     def initAlgorithm(self, config=None):
         
         
-        self.addParameter(QgsProcessingParameterFeatureSource(self.POP, 
-                                                              "Nœuds de population (points)"))
-        self.addParameter(QgsProcessingParameterField(self.COLPOP, 
-                                                      "Colonne id pour la couche de population",
-                                                      parentLayerParameterName=self.POP))
-        self.addParameter(QgsProcessingParameterField(self.IDPOP, 
-                                                      "Colonne population pour la couche de population",
-                                                      parentLayerParameterName=self.POP))
-        self.addParameter(QgsProcessingParameterFeatureSource(self.HUBS, 
-                                                              "Hubs candidats (points)"))
-        self.addParameter(QgsProcessingParameterField(self.IDHUB, 
-                                                      "Colonne id pour la couche des hubs",
-                                                      parentLayerParameterName=self.HUBS))
-        self.addParameter(QgsProcessingParameterFeatureSource(self.DESTINATION, 
-                                                              "Points d'intérêt (points, avec champ 'category')"))
-        self.addParameter(QgsProcessingParameterField(self.IDDEST, 
-                                              "Colonne id pour la couche de destination",
-                                              parentLayerParameterName=self.DESTINATION,
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.POP, "Nœuds de population (points)",
+                [QgsProcessing.TypeVectorPoint]))
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.COLPOP, 
+                "Colonne id pour la couche de population",
+                parentLayerParameterName=self.POP))
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.IDPOP, 
+                "Colonne population pour la couche de population",
+                parentLayerParameterName=self.POP))
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.HUBS, 
+                "Hubs candidats (points)",
+                [QgsProcessing.TypeVectorPoint]))
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.IDHUB, 
+                "Colonne id pour la couche des hubs",
+                parentLayerParameterName=self.HUBS))
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.DESTINATION, 
+                "Points d'intérêt (points, avec champ 'category')",
+                [QgsProcessing.TypeVectorPoint]))
+        self.addParameter(
+            QgsProcessingParameterField(self.IDDEST, 
+                                        "Colonne id pour la couche de destination",
+                                        parentLayerParameterName=self.DESTINATION,
                                               ))
-        self.addParameter(QgsProcessingParameterField(self.POICATEGORY,
-                                                              "Colonne de catégorie des services",
-                                                              parentLayerParameterName = self.DESTINATION))
+        self.addParameter(
+            QgsProcessingParameterField(self.POICATEGORY,
+                                        "Colonne de catégorie des services",
+                                        parentLayerParameterName = self.DESTINATION))
         self.addParameter(QgsProcessingParameterField(self.POITRAVEL, 
                                                        "Colonne de seuil de temps de trajet (min)",
                                                        parentLayerParameterName = self.DESTINATION))
-        self.addParameter(QgsProcessingParameterFile(self.ITINERAIRES, 
-                                                     "Itinéraires potentiels"))
-        self.addParameter(QgsProcessingParameterNumber(self.BUDGET, 
-                                                       "Budget (€)", defaultValue=150000))
-        self.addParameter(QgsProcessingParameterNumber(self.POITRAVEL, 
-                                                       "Seuil de temps de trajet (min)", defaultValue=30))
-        self.addParameter(QgsProcessingParameterEnum(self.ALLOW_CS,
-                                                 "Direction par défaut",
-                                                 options =self.LISTE,
-                                                 allowMultiple=False,
-                                                 optional = True,
-                                                 defaultValue= self.LISTE.index("Non")))
+        self.addParameter(
+            QgsProcessingParameterFile(self.ITINERAIRES, 
+                                       "Itinéraires potentiels"))
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.BUDGET, "Budget (€)", defaultValue=150000))
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.ALLOW_CS, "Autopartage possible", defaultValue=False))
+        
+        # self.addParameter(QgsProcessingParameterEnum(self.ALLOW_CS,
+        #                                          "Direction par défaut",
+        #                                          options =self.LISTE,
+        #                                          allowMultiple=False,
+        #                                          optional = True,
+        #                                          defaultValue= self.LISTE.index("Non")))
         
         self.addParameter(QgsProcessingParameterFeatureSink(self.OUTPUT, 
                                                             "Hubs sélectionnés"))
@@ -138,8 +160,11 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
         budget = self.parameterAsDouble(parameters, self.BUDGET, context)#float
         category = self.parameterAsString(parameters, self.POICATEGORY, context)
         colonne_travel = self.parameterAsString(parameters, self.POITRAVEL, context)
+        allow_unimodal_cs = self.parameterAsBool(parameters, self.ALLOW_CS, context)
 
-        
+
+        node_id = self.parameterAsString(parameters, self.COLPOP, context)
+        hub_id = self.parameterAsString(parameters, self.IDHUB, context)
         feedback.pushInfo(category)
         idx = pois_src.fields().indexFromName(category)
         idx_travel = pois_src.fields().indexFromName(colonne_travel)
@@ -165,6 +190,8 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
             nodes_src, hubs_src, itineraries_src,
             poi_categories=categories,
             travel_time_threshold=dict_travel,
+            node_id_field = node_id,
+            hub_id_field = hub_id,
             fixed_cost_hub=1000.0,
             fixed_cost_mode={"bs": 300.0, "cs": 7500.0, "pt": 0.0},
             budget=budget,
@@ -173,7 +200,7 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
 
 
         feedback.pushInfo(f"{len(data.itineraries)} itinéraires potentiels générés. Résolution du MIP...")
-        result = solve_poi_model(feedback,data, time_limit_s=300)
+        result = solve_poi_model(feedback,data, time_limit_s=300, allow_unimodal_cs=allow_unimodal_cs)
         feedback.pushInfo(f"Statut : {result['status']} — accessibilité obtenue : {result['objective']:.3f}")
 
         fields = QgsFields()

@@ -43,6 +43,8 @@ import zipfile
 import os
 import io
 import gc
+from shapely import simplify
+
 
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessing,
@@ -54,7 +56,38 @@ from qgis.core import *
 
 from mobilityhubplugin.conversions import gdf_from_layer_arrow
 
-def get_route_between_stops(stop_a, stop_b, graph,edges_gdf, simpli =False):
+def get_route_between_stops(stop_a, stop_b, 
+                            graph,edges_gdf, simpli =False,
+                            SEUIL_DISTANCE_MAX_M = 20):
+    """
+    Cherche la géométrie de la ligne entre deux arrêts
+
+    Parameters
+    ----------
+    stop_a :  Point
+        DESCRIPTION.
+    stop_b : Point
+        DESCRIPTION.
+    graph : TYPE
+        DESCRIPTION.
+    edges_gdf : TYPE
+        DESCRIPTION.
+    simpli : TYPE, optional
+        DESCRIPTION. The default is False.
+    SEUIL_DISTANCE_MAX_M : TYPE, optional
+        DESCRIPTION. The default is 20.
+
+    Raises
+    ------
+    ValueError
+        DESCRIPTION.
+
+    Returns
+    -------
+    gdf_points : TYPE
+        DESCRIPTION.
+
+    """
     # stop_a_coords = (lat, lon)
     
     #Trouver le nœud du graphe le plus proche de l'arrêt A et B
@@ -62,7 +95,8 @@ def get_route_between_stops(stop_a, stop_b, graph,edges_gdf, simpli =False):
     node_a = ox.nearest_nodes(graph, stop_a.x, stop_a.y)
     node_b = ox.nearest_nodes(graph, stop_b.x, stop_b.y)
 
-    SEUIL_DISTANCE_MAX_M = 2000  #à ajuster selon la densité du graphe
+      #à ajuster selon la densité du graphe
+    
     node_a_geom = Point(graph.nodes[node_a]['x'], graph.nodes[node_a]['y'])
     node_b_geom = Point(graph.nodes[node_b]['x'], graph.nodes[node_b]['y'])
     dist_a = stop_a.distance(node_a_geom)
@@ -79,6 +113,7 @@ def get_route_between_stops(stop_a, stop_b, graph,edges_gdf, simpli =False):
     edges = list(zip(shortest_path[:-1], shortest_path[1:]))
     
     df_chemin = pd.DataFrame(edges, columns=['u', 'v'])
+    df_chemin['_ordre_chemin'] = range(len(df_chemin)) #Pour garder l'ordre de parcours
     
     #Jointure avec graphe initial pour vraiment récupérer géom
     edges_gdf = edges_gdf.reset_index()
@@ -97,8 +132,32 @@ def get_route_between_stops(stop_a, stop_b, graph,edges_gdf, simpli =False):
     if simpli:
         edges_gdf["geometry"] = edges_gdf["geometry"].apply(lambda l: simplify(l,1))
 
+    #On merge pour avoir la géométrie
+    df_lignes = edges_gdf.merge(df_chemin, on=['u', 'v'], how='right')
+    
+    #Vérification qu'on a bien tous les tronçons
+    manquants = df_lignes['geometry'].isna()
+    if manquants.any():
+        edges_inversees = edges_gdf.rename(columns={'u': 'v', 'v': 'u'})
+        df_recup = edges_inversees.merge(
+            df_chemin.loc[manquants, ['u', 'v', '_ordre_chemin']],
+            on=['u', 'v'], how='right'
+        )
+        df_recup['geometry'] = df_recup['geometry'].apply(
+            lambda geom: LineString(list(geom.coords)[::-1]) if geom is not None else geom
+        )
+        df_lignes = pd.concat([df_lignes.loc[~manquants], df_recup], ignore_index=True)
+    
+    #On trie selon l'ordre dans le chemin
+    df_lignes = df_lignes.sort_values('_ordre_chemin').drop(columns='_ordre_chemin')
+    
+    if df_lignes['geometry'].isna().any():
+        raise ValueError(
+            "Certains tronçons du plus court chemin sont introuvables dans edges_gdf "
+            "(vérifier la cohérence entre le graphe et le GeoDataFrame d'arêtes)."
+        )
 
-    df_lignes = edges_gdf.merge(df_chemin, left_on=['u', 'v'], right_on=['u', 'v'], how='inner')
+    
     
     df_multipoint = df_lignes.copy()
     df_multipoint["geometry"] = df_multipoint["geometry"].apply(lambda geom: MultiPoint(geom.coords))
@@ -124,7 +183,7 @@ def get_route_between_stops(stop_a, stop_b, graph,edges_gdf, simpli =False):
 def findnearestnodeonnearestedge(Gr, X, Y):
     """
     source : https://stackoverflow.com/questions/68257014/how-to-find-nearest-node-along-nearest-edge
-
+ 
     Parameters
     ----------
     Gr : graphe au format osmnx
@@ -132,28 +191,28 @@ def findnearestnodeonnearestedge(Gr, X, Y):
         DESCRIPTION.
     Y : TYPE
         DESCRIPTION.
-
+ 
     Returns
     -------
     nodeid : TYPE
         DESCRIPTION.
-
+ 
     """
-
+ 
     edge,dist = ox.distance.nearest_edges(Gr, X,Y, return_dist=True)
     u, v, key = edge
     edge_data = Gr.edges[u, v, key]
     edge_geom = edge_data["geometry"]
-
+ 
     n1 = Gr.nodes[u]
     n2 = Gr.nodes[v]
-
+ 
     d1 = ox.distance.euclidean(Y,X, n1['y'], n1['x'])
     d2 = ox.distance.euclidean(Y,X, n2['y'], n2['x'])
     
     point = Point(X, Y)
     dist_along = edge_geom.project(point)
-
+ 
     if d1 < d2:
         nodeid = u
         #autre_node= v
@@ -163,12 +222,119 @@ def findnearestnodeonnearestedge(Gr, X, Y):
     
     node_point = Point(Gr.nodes[nodeid]['x'], Gr.nodes[nodeid]['y'])
     dist_node_on_edge = edge_geom.project(node_point)
-
-
+ 
+ 
     
-
+ 
     return nodeid, dist, edge_geom, dist_along, dist_node_on_edge
 
+
+def decouper_graphe_sur_points(graph, points, tol_snap=1.0, seuil_max=None):
+    """
+    Insère un noeud dans le graphe à l'endroit de la projection de chaque point
+    (typiquement un arrêt) sur l'arête la plus proche, puis découpe cette
+    arête en deux à cet endroit.
+ 
+    Quand les arêtes sont trop longues, ox.nearest_node ne peut pas détecter le noeud le
+    plus proche correctement et le plus court chemin 
+    Parameters
+    ----------
+    graph : graphe osmnx (MultiDiGraph)
+    points : GeoDataFrame ou GeoSeries de Points, dans le même CRS que les
+        coordonnées (x, y) des nœuds du graphe (ex : EPSG:2154).
+    tol_snap : float
+        En dessous de cette distance, on considère qu'un noeud ou
+        une extrémité d'arête existe déjà à cet endroit et on ne découpe
+        pas (pour ne pas avoir de noeuds dupliqués).
+    seuil_max : float, optional
+        Si fourni, on ignore les points dont même l'arête la plus proche
+        est à une distance supérieure à ce seuil (rien à découper dans ce
+        cas, ce sera de toute façon rejeté plus tard par SEUIL_DISTANCE_MAX_M).
+ 
+    Returns
+    -------
+    graph : le graphe modifié (copie), avec un noeud ajouté par arrêt
+        effectivement découpé.
+    """
+    graph = graph.copy()
+    prochain_id = (max(graph.nodes) + 1) if len(graph.nodes) else 0
+ 
+    geometries = points.geometry if hasattr(points, "geometry") else points
+ 
+    #for geom in geometries:
+    for row in points.iterrows():
+        geom = row["geometry"]
+        X, Y = geom.x, geom.y
+ 
+        #Déjà tout près d'un noeud existant : rien à découper
+        try:
+            _, dist_noeud = ox.distance.nearest_nodes(graph, X, Y, return_dist=True)
+        except Exception:
+            continue
+        if dist_noeud <= tol_snap:
+            continue
+ 
+        try:
+            edge, dist_edge = ox.distance.nearest_edges(graph, X, Y, return_dist=True)
+        except Exception:
+            continue
+        print(dist_edge)
+        if seuil_max is not None and dist_edge > seuil_max:
+            print("Trop loin de l'arête")
+            print(row["route_type"])
+            
+            continue
+ 
+        u, v, key = edge
+        data = dict(graph.edges[u, v, key])
+        edge_geom = data.get("geometry")
+        if edge_geom is None:
+            #Pas de géométrie détaillée sur l'arête : segment droit u -> v
+            n1, n2 = graph.nodes[u], graph.nodes[v]
+            edge_geom = LineString([(n1["x"], n1["y"]), (n2["x"], n2["y"])])
+ 
+        dist_along = edge_geom.project(Point(X, Y))
+ 
+        #La projection tombe déjà sur une extrémité : rien à découper
+        if dist_along <= tol_snap or dist_along >= edge_geom.length - tol_snap:
+            continue
+ 
+        partie1 = substring(edge_geom, 0, dist_along)
+        partie2 = substring(edge_geom, dist_along, edge_geom.length)
+        point_proj = edge_geom.interpolate(dist_along)
+ 
+        nouveau_noeud = prochain_id
+        prochain_id += 1
+        graph.add_node(nouveau_noeud, x=point_proj.x, y=point_proj.y)
+ 
+        #On remplace l'arête initiale par les deux tronçons obtenus
+        graph.remove_edge(u, v, key)
+        graph.add_edge(u, nouveau_noeud, key=0,
+                        **{**data, "geometry": partie1, "length": partie1.length})
+        graph.add_edge(nouveau_noeud, v, key=0,
+                        **{**data, "geometry": partie2, "length": partie2.length})
+        
+        #Comme le graphe est bidirectionnel, il faut faire le même traitement pour l'arête 
+        #retour (si elle existe)
+        
+        if graph.has_edge(v, u):
+            for key_retour in list(graph[v][u].keys()):
+                data_retour = dict(graph.edges[v, u, key_retour])
+                geom_retour = data_retour.get("geometry")
+                if geom_retour is None:
+                    continue
+                dist_along_retour = geom_retour.length - dist_along
+                if dist_along_retour <= tol_snap or dist_along_retour >= geom_retour.length - tol_snap:
+                    continue
+                p1 = substring(geom_retour, 0, dist_along_retour)
+                p2 = substring(geom_retour, dist_along_retour, geom_retour.length)
+                graph.remove_edge(v, u, key_retour)
+                graph.add_edge(v, nouveau_noeud, key=0,
+                                **{**data_retour, "geometry": p1, "length": p1.length})
+                graph.add_edge(nouveau_noeud, u, key=0,
+                                **{**data_retour, "geometry": p2, "length": p2.length})
+ 
+    return graph
 
 
 class CreaShapesAlgorithm(QgsProcessingAlgorithm):
@@ -197,6 +363,7 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
     NODES_VOITURE = "NODES_VOITURE"
     RESEAU_VOITURE = "RESEAU_VOITURE"
     WEIGHT_VOITURE = "WEIGHT_VOITURE"
+    SEUIL_DISTANCE_MAX_M = 'SEUIL_DISTANCE_MAX_M'
   
     OUTPUT = 'OUTPUT'
     
@@ -234,6 +401,12 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         formatting characters.
         """
         return 'traitements_annexes'
+    
+    def tr(self, string):
+        return QCoreApplication.translate('Processing', string)
+
+    def createInstance(self):
+        return CreaShapesAlgorithm()
 
     def initAlgorithm(self, config):
         """
@@ -277,16 +450,13 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         #                                       "Colonne poids réseau routier",
         #                                       parentLayerParameterName=self.RESEAU_VOITURE))
         
-
-        # We add a feature sink in which to store our processed features (this
-        # usually takes the form of a newly created vector layer when the
-        # algorithm is run in QGIS).
         self.addParameter(
-            QgsProcessingParameterFeatureSink(
-                self.OUTPUT,
-                self.tr('Output layer')
-            )
-        )
+            QgsProcessingParameterNumber(
+                self.SEUIL_DISTANCE_MAX_M, 
+                self.tr("Distance max entre les arrêts et les noeuds du réseau (en mètres)"), 
+                defaultValue=20000))
+
+       
 
     def processAlgorithm(self, parameters, context, feedback):
         """
@@ -297,7 +467,7 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         
         lignes_layer = self.parameterAsVectorLayer(parameters, self.RESEAU_TRAIN, context)#QgsProcessingFeatureSource
         nodes_layer = self.parameterAsVectorLayer(parameters, self.NODES_TRAIN, context)#QgsProcessingFeatureSource
-        
+        max_dist  = self.parameterAsDouble(parameters, self.SEUIL_DISTANCE_MAX_M, context)  # tolérance en unités de la couche
         
         nodes_train = gdf_from_layer_arrow(nodes_layer)
         edges_train = gdf_from_layer_arrow(lignes_layer)
@@ -353,6 +523,7 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
         trips['shape_id'] = trips.groupby(
             ['route_id', 'direction_id', 'stop_sequence_tuple']
         ).ngroup()
+        trips["shape_id"] = trips["shape_id"].astype(str)+"_"+trips["route_id"]
 
         check = trips.groupby('shape_id')['stop_sequence_tuple'].nunique()
         print("Max de séquences différentes par shape_id (doit être 1) :", check.max())
@@ -394,6 +565,19 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
 
         #Enlever les doublons
         #shapes = shapes.drop_duplicates(subset = ['shape_id', "stop_id", "geometry", "route_id"])
+        # ----------- Découpage des réseaux sur les arrêts -----------------------
+        feedback.pushInfo("Découpage du réseau ferré sur les arrêts...")
+        arrets_train = shapes.loc[shapes['route_type'] == 2, ['geometry']].drop_duplicates()
+        if not arrets_train.empty:
+            G_train = decouper_graphe_sur_points(G_train, arrets_train, seuil_max=max_dist)
+            _, edges_train = ox.graph_to_gdfs(G_train)
+        
+        feedback.pushInfo("Découpage du réseau routier sur les arrêts...")
+        arrets_voiture = shapes.loc[shapes['route_type'] == 3, ['geometry']].drop_duplicates()
+        if not arrets_voiture.empty:
+            G_voiture = decouper_graphe_sur_points(G_voiture, arrets_voiture, seuil_max=max_dist)
+            _, edges_voiture = ox.graph_to_gdfs(G_voiture)
+
         
         # ----------- Préparation des GeoDataFrames d'arêtes ---------------------
         
@@ -420,11 +604,10 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
             group = group.sort_values('shape_pt_sequence')
             sequence_idx = 1
             for i in range( len(group) - 1): #range commmence à 0 mais stop_sequence commence à 1
-                stop_a = group[group["shape_pt_sequence"] == i-1]
                 stop_a = group.iloc[i]
                 stop_b = group.iloc[i + 1]
                 
-                if stop_a.equals(stop_b):
+                if stop_a.equals(stop_b) or stop_a.geometry.equals(stop_b.geometry):
                     continue
                 start_point = stop_a.geometry
                 end_point = stop_b.geometry
@@ -432,7 +615,9 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
                 #Calculer le tracé entre l'arrêt actuel et le suivant
                 try:
                     feedback.pushInfo("On cherche la route ...")
-                    geom_reproj = get_route_between_stops(start_point, end_point, graphe_a_utiliser,edges_gdf, simpli=False)
+                    geom_reproj = get_route_between_stops(start_point, end_point, 
+                                                          graphe_a_utiliser,edges_gdf, simpli=False,
+                                                          SEUIL_DISTANCE_MAX_M =max_dist)
                     lons = list(geom_reproj["shape_pt_lon"])
                     lats = list(geom_reproj["shape_pt_lat"])
 
@@ -523,8 +708,3 @@ class CreaShapesAlgorithm(QgsProcessingAlgorithm):
 
 
 
-    def tr(self, string):
-        return QCoreApplication.translate('Processing', string)
-
-    def createInstance(self):
-        return CreaShapesAlgorithm()
