@@ -198,30 +198,6 @@ def build_time_matrix(G, all_nodes, weight, feedback=None, batch_size=200):
 
  
     
- 
-    # labels = list(all_nodes.keys())
-    # osmids = [all_nodes[k] for k in labels]
- 
-    # missing = [lbl for lbl, n in zip(labels, osmids) if n not in node_index]
-    # if missing:
-    #     raise ValueError(
-    #         f"Nœuds absents du graphe après conversion : {missing[:10]}"
-    #         + (" ..." if len(missing) > 10 else "")
-    #     )
- 
-    # indices = [node_index[n] for n in osmids]
- 
-    # if feedback:
-    #     feedback.pushInfo(f"Calcul de {len(indices)} plus courts chemins (Dijkstra vectorisé)...")
- 
-    # # Une seule passe pour toutes les sources -> matrice (n_sources, n_total_nodes)
-    # dist_matrix = scipy_dijkstra(csgraph=A, directed=True, indices=indices)
- 
-    # # On ne garde que les colonnes correspondant aux nœuds d'intérêt
-    # sub = dist_matrix[:, indices] / 60.0  # secondes -> minutes
- 
-    # matrix = pd.DataFrame(sub, index=labels, columns=labels)
-    
     result = result / 60.0  # secondes -> minutes
     matrix = pd.DataFrame(result, index=keys, columns=keys)
     matrix.index.name = "origine"

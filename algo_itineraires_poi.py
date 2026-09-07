@@ -146,10 +146,10 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterFeatureSource(self.POP, 
                                                               "Nœuds de population (points)",
                                                               [QgsProcessing.SourceType.TypeVectorPoint]))
-        self.addParameter(QgsProcessingParameterField(self.COLPOP, 
+        self.addParameter(QgsProcessingParameterField(self.IDPOP, 
                                                       "Colonne id pour la couche de population",
                                                       parentLayerParameterName=self.POP))
-        self.addParameter(QgsProcessingParameterField(self.IDPOP, 
+        self.addParameter(QgsProcessingParameterField(self.COLPOP, 
                                                       "Colonne population pour la couche de population",
                                                       parentLayerParameterName=self.POP))
         self.addParameter(QgsProcessingParameterFeatureSource(self.HUBS,
@@ -167,7 +167,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterField(self.IDDEST, 
                                               "Colonne id pour la couche de destination",
                                               parentLayerParameterName=self.DESTINATION,
-                                              optional = True))
+                                              ))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXPT, 
                                                               "Matrice de temps transportS en commun",
                                                               extension = "csv"))
@@ -191,9 +191,9 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
            self.OUTPUT, "Itinéraires potentiels (table)"))
 
     def processAlgorithm(self, parameters, context, feedback):
-        nodes_layer = self.parameterAsSource(parameters, self.POP, context)#QgsProcessingFeatureSource
-        hubs_layer = self.parameterAsSource(parameters, self.HUBS, context)#QgsProcessingFeatureSource
-        dest_layer = self.parameterAsSource(parameters, self.DESTINATION, context)#QgsProcessingFeatureSource
+        nodes_layer = self.parameterAsVectorLayer(parameters, self.POP, context)#QgsProcessingFeatureSource
+        hubs_layer = self.parameterAsVectorLayer(parameters, self.HUBS, context)#QgsProcessingFeatureSource
+        dest_layer = self.parameterAsVectorLayer(parameters, self.DESTINATION, context)#QgsProcessingFeatureSource
         matrix_pt_path = self.parameterAsFile(parameters, self.MATRIXPT, context)
         matrix_b_path = self.parameterAsFile(parameters, self.MATRIXBIKE, context)
         matrix_car_path = self.parameterAsFile(parameters, self.MATRIXCAR, context)
@@ -202,6 +202,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         min_improvement=self.parameterAsDouble(parameters, self.MINIMPRO, context)
         
         id_nodes = self.parameterAsString(parameters, self.IDPOP,context)
+        print(id_nodes)
         id_hubs = self.parameterAsString(parameters, self.IDHUB,context)
         pop_column = self.parameterAsString(parameters, self.COLPOP,context)
         id_dest = self.parameterAsString(parameters, self.IDDEST,context)
@@ -213,19 +214,26 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         matrix_bike = pd.read_csv(matrix_b_path, index_col=0)
         matrix_car = pd.read_csv(matrix_car_path, index_col=0)
         matrix_walk = pd.read_csv(matrix_w_path, index_col=0)
-        feedback.pushInfo(f"{matrix_car.columns} : colonnes matrice voiture")
+        #feedback.pushInfo(f"{matrix_car.columns} : colonnes matrice voiture")
+        feedback.pushInfo(f"{len(matrix_walk)} : taille matrice marche")
+
 
         #Formatage
         nodes_gdf = gdf_from_layer_arrow(nodes_layer)
         hubs_gdf = gdf_from_layer_arrow(hubs_layer)
         dest_gdf = gdf_from_layer_arrow(dest_layer)
         
+        feedback.pushInfo(f"{nodes_gdf[id_nodes][:5]} : index pop avant modif")
+        print(nodes_gdf[id_nodes][:5])
+
         nodes_gdf[id_nodes] = "pop_" + nodes_gdf[id_nodes].astype(str)
         nodes_gdf = nodes_gdf.set_index(id_nodes)
+        feedback.pushInfo(f"{nodes_gdf.index} : index pop")
+
         
         dest_gdf[id_dest] = "dest_" + dest_gdf[id_dest].astype(str)
         dest_gdf = dest_gdf.set_index(id_dest)
-        dest_gdf = dest_gdf["category_id"]
+        #dest_gdf = dest_gdf["category_id"]
         
         hubs_gdf[id_hubs] = "hub_" + hubs_gdf[id_hubs].astype(str)
         hubs_gdf = hubs_gdf.set_index(id_hubs)

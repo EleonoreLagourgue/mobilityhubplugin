@@ -19,7 +19,7 @@ from qgis.core import (
     QgsProcessingException,
 )
 from qgis.PyQt.QtCore import QVariant
-from .optimization_model import WorkplaceProblemData, WorkplaceItinerary, solve_workplace_model
+from .optimization_model import WorkplaceProblemData, WorkplaceItinerary, solve_workplace_model, cout_minimal_couverture
 from mobilityhubplugin.conversions import build_workplace_problem_data
 
 import pandas as pd
@@ -144,13 +144,14 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
             node_id_field = node_id,
             hub_id_field = hub_id,
             fixed_cost_hub=1000.0,
-            fixed_cost_mode={"bs": 800.0, "cs": 1500.0, "pt": 0.0}, #abri à vélo, parking+borne de recharge
+            fixed_cost_mode={"bs": 900.0, "cs": 20000.0, "pt": 0.0}, #abri à vélo, parking+borne de recharge
             budget=budget,
         )
         feedback.pushInfo("Fin construction des data")
         #feedback.pushInfo(f"Modes détectés : {data.modes}")
         #feedback.pushInfo(f"Hubs détectés : {data.hub_locations}")
-        
+        status, cout_min = cout_minimal_couverture(data)
+        feedback.pushInfo(f"Statut couverture minimale : {status}, coût minimal réel : {cout_min}")
         #Calcul d'optimisation
         feedback.pushInfo(f"{len(data.itineraries)} itinéraires potentiels générés. Résolution du MIP...")
         result = solve_workplace_model(feedback,data, time_limit_s=300, allow_unimodal_cs=allow_unimodal_cs)

@@ -236,7 +236,10 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         nodes_gdf = gdf_from_layer_arrow(nodes_layer)
         hubs_gdf = gdf_from_layer_arrow(hubs_layer)
         nodes_gdf[id_nodes] = "pop_" + nodes_gdf[id_nodes].astype(str)
+        
+        feedback.pushInfo(str(nodes_gdf[id_nodes][:5]))
         nodes_gdf = nodes_gdf.set_index(id_nodes)
+        
         hubs_gdf[id_hubs] = "hub_" + hubs_gdf[id_hubs].astype(str)
         hubs_gdf = hubs_gdf.set_index(id_hubs)
 

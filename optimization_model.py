@@ -72,11 +72,11 @@ def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300,
     t0 = time.time()
     # --- variables ---
     y = {(l, m): pulp.LpVariable(f"y_{l}_{m}", cat="Binary")
-         for l in data.hub_locations for m in data.modes}
+         for l in hub_locations for m in data.modes}
     e = {l: pulp.LpVariable(f"e_{l}", lowBound=0, upBound=data.fixed_cost_hub)
-         for l in data.hub_locations}
+         for l in hub_locations}
     u = {(l, m): pulp.LpVariable(f"u_{l}_{m}", lowBound=0, cat="Integer")
-         for l in data.hub_locations for m in data.modes}
+         for l in hub_locations for m in data.modes}
 
     x = {it.id: pulp.LpVariable(f"x_{it.id}", cat="Binary") for it in data.itineraries}
     z = {it.id: pulp.LpVariable(f"z_{it.id}", cat="Binary") for it in data.itineraries}
@@ -172,16 +172,31 @@ def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: in
     feedback.pushInfo(f"Hubs candidats : {len(data.hub_locations)} -> {len(hub_locations)} réellement utilisés")
     
     y = {(l, m): pulp.LpVariable(f"y_{l}_{m}", cat="Binary")
-         for l in data.hub_locations for m in data.modes}
+         for l in hub_locations for m in data.modes}
     e = {l: pulp.LpVariable(f"e_{l}", lowBound=0, upBound=data.fixed_cost_hub)
-         for l in data.hub_locations}
+         for l in hub_locations}
     u = {(l, m): pulp.LpVariable(f"u_{l}_{m}", lowBound=0, cat="Integer")
-         for l in data.hub_locations for m in data.modes}
+         for l in hub_locations for m in data.modes}
     x = {it.id: pulp.LpVariable(f"x_{it.id}", cat="Binary") for it in data.itineraries}
 
     od_pairs = {(it.origin, it.destination) for it in data.itineraries}
     t0 = datetime.datetime.now()
     print("Temps 0",t0)
+    
+    problematic = []
+    
+    #Diagnostic
+    for (i, j) in od_pairs:
+        its_ij = [it for it in data.itineraries if it.origin == i and it.destination == j]
+        viable = [
+            it for it in its_ij
+            if allow_unimodal_cs or not any("cs" in (l, m) for (l, m) in it.hubs_required)
+        ]
+        if not viable:
+            problematic.append((i, j, len(its_ij)))
+    feedback.pushInfo(f"Paires OD sans itinéraire viable : {len(problematic)} / {len(od_pairs)}")
+    for i, j, n in problematic[:10]:
+        feedback.pushInfo(f"  {i} -> {j} : {n} itinéraires, tous forcés à 0 (cs unimodal)")
     
     # --- objectif (13) ---
     #obj_var = pulp.LpVariable("obj_wp", lowBound=0, upBound=1)
@@ -243,6 +258,7 @@ def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: in
     print("Temps entre 3 et 2", t2-t1)
     feedback.pushInfo(f"Avant bloc budget : {len(prob.variables())} variables, {len(prob.constraints)} contraintes")
     feedback.pushInfo(f"len(data.modes) = {len(data.modes)}")
+    
     # --- contraintes (17)-(19) : coûts d'installation / budget ---
     for l in hub_locations:
         for m in data.modes:
@@ -259,19 +275,37 @@ def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: in
         for l in hub_locations
     ) <= data.budget
     feedback.pushInfo("Contraintes ajoutées")
+    
+    modes_utilises = {m for it in data.itineraries for (l, m) in it.hubs_required}
+    cout_min_estime = len(set(l for it in data.itineraries for (l, m) in it.hubs_required)) * data.fixed_cost_hub
+    feedback.pushInfo(f"Budget : {data.budget}, coût minimal approximatif (tous hubs actifs) : {cout_min_estime}")
 
     # --- résolution ---
-    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s,
-                               threads=4, gapRel=0.02,)
-    t1 = time.time()
+    #solver = pulp.PULP_CBC_CMD(msg=True, timeLimit=time_limit_s,
+                               #threads=4, gapRel=0.02,)
+    solver = pulp.getSolver('HiGHS', msg=True, timeLimit=time_limit_s)
+    t1 = datetime.datetime.now()
     print(t1)
     prob.solve(solver)
     feedback.pushInfo("Résolution faite")
     status = pulp.LpStatus[prob.status]
+    feedback.pushInfo(f"Statut : {status}")
+    feedback.pushInfo(f"Objectif : {str(pulp.value(prob.objective))}")
+    feedback.pushInfo(f"Hubs : {str(pulp.value(y[(l, m)]))}")
+    
+    if pulp.value(prob.objective) is None:
+        #feedback.pushInfo(f"Aucune solution trouvée (statut : {status})")
+        return {
+            "status": status,
+            "objective": None,
+            "hubs": {},
+            "parking_spaces": {},
+            "itineraries_used": [],
+        }
     
     #Vérif
     for v in prob.variables():
-        #feedback.pushInfo(f"{v.name}, {v.varValue}")
+        feedback.pushInfo(f"{v.name}, {v.varValue}")
         if v.varValue is None:
             feedback.pushInfo(f"Variable non résolue : {v.name}")
     
@@ -290,3 +324,48 @@ def solve_workplace_model(feedback,data: WorkplaceProblemData , time_limit_s: in
         "parking_spaces": parking,
         "itineraries_used": itineraries_used,
     }
+
+
+def cout_minimal_couverture(data, allow_unimodal_cs=False):
+    prob = pulp.LpProblem("min_cost_cover_full", pulp.LpMinimize)
+
+    hub_mode_pairs = {(l, m) for it in data.itineraries for (l, m) in it.hubs_required}
+    y = {(l, m): pulp.LpVariable(f"y_{l}_{m}", cat="Binary") for (l, m) in hub_mode_pairs}
+    e = {l: pulp.LpVariable(f"e_{l}", lowBound=0, upBound=data.fixed_cost_hub)
+         for l in {l for (l, m) in hub_mode_pairs}}
+    u = {(l, m): pulp.LpVariable(f"u_{l}_{m}", lowBound=0, cat="Integer") for (l, m) in hub_mode_pairs}
+    x = {it.id: pulp.LpVariable(f"x_{it.id}", cat="Binary") for it in data.itineraries}
+
+    prob += pulp.lpSum(e[l] for l in e) + pulp.lpSum(
+        data.fixed_cost_mode[m] * u[(l, m)] for (l, m) in hub_mode_pairs
+    )
+
+    od_pairs = {(it.origin, it.destination) for it in data.itineraries}
+    for (i, j) in od_pairs:
+        its = [it for it in data.itineraries if it.origin == i and it.destination == j]
+        prob += pulp.lpSum(x[it.id] for it in its) == 1
+
+    for it in data.itineraries:
+        for (l, m) in it.hubs_required:
+            if not allow_unimodal_cs and "cs" in (l, m):
+                prob += x[it.id] == 0
+            prob += x[it.id] <= y[(l, m)]
+
+    for l in {l for (l, m) in hub_mode_pairs}:
+        for m in data.modes:
+            if (l, m) in y:
+                prob += data.fixed_cost_hub * y[(l, m)] <= e[l]
+
+    # parking, cette fois inclus
+    for (l, m) in hub_mode_pairs:
+        demand = pulp.lpSum(
+            it.parking_demand.get((l, m), 0) * x[it.id] for it in data.itineraries
+        )
+        prob += demand <= u[(l, m)]
+
+    solver = pulp.getSolver('HiGHS', msg=False, timeLimit=120)
+    prob.solve(solver)
+    return pulp.LpStatus[prob.status], pulp.value(prob.objective)
+
+
+

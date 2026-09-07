@@ -145,7 +145,8 @@ class DecoupeGTFSAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource( 
                 self.EMPRISE,
                 self.tr("Couche d'emprise de la zone d'intérêt"),
-                optional=False
+                optional=False,
+                types=[QgsProcessing.TypeVectorPolygon]
             )
         )
         self.addParameter(
