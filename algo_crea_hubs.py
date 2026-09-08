@@ -77,7 +77,7 @@ class CreaHubsPot(QgsProcessingAlgorithm):
     # Constants used to refer to parameters and outputs. They will be
     # used when calling the algorithm from another algorithm, or when
     # calling from the QGIS console.
-    NATURE = "NATURE"
+    TOLERANCE = "TOLERANCE"
     RESEAU = "RESEAU"
     NODES = "NODES"
     POP = "POP"
@@ -95,10 +95,10 @@ class CreaHubsPot(QgsProcessingAlgorithm):
         return CreaHubsPot()
 
     def name(self):
-        return "matrice_temps"
+        return "crea_hubs"
 
     def displayName(self):
-        return "Crée une matrice de temps de trajet"
+        return "Créer des emplacements potentiels"
 
     def group(self):
         return "Analyse réseau"
@@ -121,24 +121,21 @@ class CreaHubsPot(QgsProcessingAlgorithm):
 
         # We add the input vector features source. It can have any kind of
         # geometry.
-        self.addParameter(
-            QgsProcessingParameterFile( 
-                self.REP_GTFS,
-                self.tr('zip GTFS'),
-                QgsProcessingParameterFile.File,
-                extension='zip',
-                optional=False
-            )
-        )
+   
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.RESEAU, 
                 "Lignes du réseau (lignes)",
                 [QgsProcessing.SourceType.TypeVectorLine]))
         self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.NODES, 
+                "Noeuds du réseau (points)",
+                [QgsProcessing.SourceType.TypeVectorPoint]))
+        self.addParameter(
             QgsProcessingParameterNumber(
                 self.TOLERANCE, 
-                self.tr("Tolérance topologique (en mètres)"), defaultValue=-1))
+                "Tolérance topologique (en mètres)", defaultValue=-1))
         
         self.addParameter(
             QgsProcessingParameterField(

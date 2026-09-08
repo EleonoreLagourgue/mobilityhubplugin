@@ -179,16 +179,16 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
 
         self.addParameter(QgsProcessingParameterFile(self.MATRIXPT, 
                                                               "Matrice de temps transports en commun",
-                                                              extension = "csv"))
+                                                              extension = "parquet"))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXCAR, 
                                                               "Matrice de temps voiture",
-                                                              extension = "csv"))
+                                                              extension = "parquet"))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXBIKE, 
                                                               "Matrice de temps vélo",
-                                                              extension = "csv"))
+                                                              extension = "parquet"))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXWALK, 
                                                               "Matrice de temps marche",
-                                                              extension = "csv"))
+                                                              extension = "parquet"))
         self.addParameter(QgsProcessingParameterNumber(self.MAXRATIO, 
                                                        "Ratio max avec la voiture (ex: max 3x plus lent que la voiture)", 
                                                        defaultValue=3.0))
@@ -225,10 +225,10 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
 
 
         feedback.pushInfo("Construction des itinéraires potentiels (routage + élimination des dominés)...")
-        matrix_pt = pd.read_csv(matrix_pt_path, index_col=0)
-        matrix_bike = pd.read_csv(matrix_b_path, index_col=0)
-        matrix_car = pd.read_csv(matrix_car_path, index_col=0)
-        matrix_walk = pd.read_csv(matrix_w_path, index_col=0)
+        matrix_pt = pd.read_parquet(matrix_pt_path,)
+        matrix_bike = pd.read_parquet(matrix_b_path)
+        matrix_car = pd.read_parquet(matrix_car_path)
+        matrix_walk = pd.read_parquet(matrix_w_path)
         feedback.pushInfo(f"{len(matrix_walk)} : taille matrice marche")
         feedback.pushInfo(f"{matrix_car.index} : index matrice voiture")
         feedback.pushInfo(f"{matrix_car.columns} : colonnes matrice voiture")
@@ -277,11 +277,11 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
         od_matrix.columns = od_matrix.columns.astype(str)
         for row_a in nodes_gdf.itertuples():
             i = row_a[0]
-            feedback.pushInfo(f"ID origine :{i}")
+            #feedback.pushInfo(f"ID origine :{i}")
 
             for row_b in nodes_gdf.itertuples():
                 j = row_b[0]
-                feedback.pushInfo(f"ID destination :{j}")
+                #feedback.pushInfo(f"ID destination :{j}")
 
                 if i== j:
                     feedback.pushInfo(f"Mêmes rows : {row_a}, \n{row_b}")
@@ -300,7 +300,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                 # else:
                 #     d_s = d_s_match.iloc[0]
                 d_s = od_matrix.loc[str(i), str(j)] if (str(i) in od_matrix.index and str(j) in od_matrix.columns) else 0.0
-                feedback.pushInfo(f"d_s : {d_s}")
+                #feedback.pushInfo(f"d_s : {d_s}")
                 #feedback.pushInfo(f"d_s test : {test}")
 
 
@@ -313,7 +313,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                     travel_time=t_pt, id=iid, parking_demand = {}
                 ))
                 iid += 1
-                feedback.pushInfo(f"Ratio voiture / TC : {t_car/t_pt}")
+                #feedback.pushInfo(f"Ratio voiture / TC : {t_car/t_pt}")
 
                 # =====================================================
                 #          Unimodal mais que si meilleur que TC pur

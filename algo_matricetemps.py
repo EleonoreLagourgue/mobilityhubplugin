@@ -363,12 +363,14 @@ class MatriceTemps(QgsProcessingAlgorithm):
         feedback.pushInfo("Recherche des nœuds les plus proches (hubs)...")
         
         feedback.pushInfo(f"crs du graphe : {G.graph['crs']}")
-        nodes_hubs = add_nearest_node(hubs_layer, G, node_field, id_hub, feedback=feedback)
+        new_hubs = hubs_layer.materialize(QgsFeatureRequest().setFilterFids(hubs_layer.allFeatureIds()))
+        nodes_hubs = add_nearest_node(new_hubs, G, node_field, id_hub, feedback=feedback)
         if feedback.isCanceled():
             return {}
  
         feedback.pushInfo("Recherche des nœuds les plus proches (population)...")
-        nodes_pop  = add_nearest_node(pop_layer, G, node_field, id_pop, feedback=feedback) #renvoie un dict
+        new_pop = pop_layer.materialize(QgsFeatureRequest().setFilterFids(pop_layer.allFeatureIds()))
+        nodes_pop  = add_nearest_node(new_pop, G, node_field, id_pop, feedback=feedback) #renvoie un dict
         if feedback.isCanceled():
             return {}
 
@@ -383,7 +385,8 @@ class MatriceTemps(QgsProcessingAlgorithm):
         if dest_layer is not None:
             id_dest = self.parameterAsString(parameters, self.IDDEST, context)
             feedback.pushInfo("Recherche des nœuds les plus proches (destinations)...")
-            nodes_dest = add_nearest_node(dest_layer, G, node_field, id_dest, feedback=feedback)
+            new_dest = dest_layer.materialize(QgsFeatureRequest().setFilterFids(dest_layer.allFeatureIds()))
+            nodes_dest = add_nearest_node(new_dest, G, node_field, id_dest, feedback=feedback)
 
             for fid, node in nodes_dest.items():
                 all_nodes[f"dest_{fid}"] = node
@@ -396,7 +399,7 @@ class MatriceTemps(QgsProcessingAlgorithm):
         feedback.pushInfo(f"Écriture du fichier de sortie : {fichier_sortie}")
         matrix = build_time_matrix(G, all_nodes, weight, feedback)
         matrix = matrix.round(2)
-        matrix.to_csv(fichier_sortie, index=True, float_format="%.2f")
+        #matrix.to_csv(fichier_sortie, index=True, float_format="%.2f")
 
 
 

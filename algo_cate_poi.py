@@ -30,7 +30,7 @@ __copyright__ = '(C) 2026 by Eleonore Lagourgue'
 
 __revision__ = '$Format:%H$'
 
-from qgis.PyQt.QtCore import QCoreApplication
+from qgis.PyQt.QtCore import QCoreApplication,QVariant
 from qgis.core import (QgsProcessing,
                        QgsFeatureSink,
                        QgsProcessingAlgorithm,
@@ -56,7 +56,7 @@ class CateServices(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Catégoriser les points d"intérêt'
+        return "Catégoriser les points d'intérêt"
 
     def displayName(self):
         """
@@ -214,7 +214,7 @@ class CateServices(QgsProcessingAlgorithm):
                 for cat in categories:
                     # 1ère catégorie du tableau qui matche = priorité à l'ordre
                     # (équivalent à l'ordre des WHEN dans le CASE SQL)
-                    if any(fnmatch.fnmatchcase(value_str, p) for p in cat['patterns']):
+                    if any(fnmatch.fnmatchcase(value_str, p) for p in cat['valeurs']):
                         matched = cat
                         break
 
