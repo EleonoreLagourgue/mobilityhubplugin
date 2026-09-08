@@ -75,11 +75,11 @@ def get_useful_hubs(i, j, hubs_potentiels,
     Évite d'énumérer tous les hubs pour chaque paire O-D.
     """
     useful = []
-    for hub_id in hubs_potentiels:
+    for hub_id in hubs_potentiels.index:
         print(hub_id)
          
-        t1 = mat_pt[i][hub_id] + TRANSFER_TIME + mat_car[hub_id][j]
-        t2 = mat_car[i][hub_id] + TRANSFER_TIME + mat_pt[hub_id][j]
+        t1 = mat_pt.loc[i,hub_id] + TRANSFER_TIME + mat_car.loc[hub_id,j]
+        t2 = mat_car.loc[i,hub_id] + TRANSFER_TIME + mat_pt.loc[hub_id,j]
         
         if (t1 < t_pt * (1 - min_improvement) and t1 < t_max) or \
            (t2 < t_pt * (1 - min_improvement) and t2 < t_max) :
@@ -88,8 +88,8 @@ def get_useful_hubs(i, j, hubs_potentiels,
 def elimination_itineraires_domines(itineraires):
     by_od = defaultdict(list)
     for it in itineraires:
-        by_od[(it.origin, it.destination)].append(it)
-        #Construit dictionnaire avec comme clé origine& destination
+        by_od[(it.node, it.poi_category)].append(it)
+        #Construit dictionnaire avec comme clé noeud d'origine et la catégorie de poi
 
     kept = []
     for od, itis in by_od.items():
@@ -179,7 +179,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                                                               extension = "csv"))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXWALK, 
                                                               "Matrice de temps marche",
-                                                              extension = "csv"))
+                                                              fileFilter='Fichiers csv (*.csv);;Fichiers Parquet (*.parquet)'))
         self.addParameter(QgsProcessingParameterNumber(self.MAXRATIO, 
                                                        "Ratio max avec la voiture (ex: max 3x plus lent que la voiture)", 
                                                        defaultValue=3.0))
@@ -223,12 +223,12 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         hubs_gdf = gdf_from_layer_arrow(hubs_layer)
         dest_gdf = gdf_from_layer_arrow(dest_layer)
         
-        feedback.pushInfo(f"{nodes_gdf[id_nodes][:5]} : index pop avant modif")
-        print(nodes_gdf[id_nodes][:5])
+        #feedback.pushInfo(f"{nodes_gdf[id_nodes][:5]} : index pop avant modif")
+        #print(nodes_gdf[id_nodes][:5])
 
         nodes_gdf[id_nodes] = "pop_" + nodes_gdf[id_nodes].astype(str)
         nodes_gdf = nodes_gdf.set_index(id_nodes)
-        feedback.pushInfo(f"{nodes_gdf.index} : index pop")
+        #feedback.pushInfo(f"{nodes_gdf.index} : index pop")
 
         
         dest_gdf[id_dest] = "dest_" + dest_gdf[id_dest].astype(str)
@@ -245,14 +245,14 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         pop = nodes_gdf[pop_column]
         for row_a in nodes_gdf.itertuples():
             i = row_a[0]
-            feedback.pushInfo(f"ID origine :{i}")
+            #feedback.pushInfo(f"ID origine :{i}")
             d_s = pop.loc[str(i)] if (str(i) in pop.index ) else 0.0
-            feedback.pushInfo(f"d_s : {d_s}")
+            #feedback.pushInfo(f"d_s : {d_s}")
 
             for row_b in dest_gdf.itertuples():
                 j = row_b[0]
                 cate = row_b[1]
-                feedback.pushInfo(f"ID destination :{j}")
+                #feedback.pushInfo(f"ID destination :{j}")
 
                 if i== j:
                     feedback.pushInfo(f"Mêmes rows : {row_a}, \n{row_b}")
@@ -269,13 +269,13 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                 #          On ajoute toujours le temps en TC
                 # =====================================================
                 itineraries.append(Itinerary(
-                    origin=i, destination=j,
+                    node=i,
                      hubs_required=[],
                     travel_time=t_pt, id=iid, parking_demand = {},
                     poi_category = cate,
                 ))
                 iid += 1
-                feedback.pushInfo(f"Ratio voiture / TC : {t_car/t_pt}")
+                #feedback.pushInfo(f"Ratio voiture / TC : {t_car/t_pt}")
 
                 # =====================================================
                 #          Unimodal mais que si meilleur que TC pur
@@ -285,7 +285,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                     hubs_req = [(i, "cs"), (j, "cs")]
 
                     itineraries.append(Itinerary(
-                        origin=i, destination=j,
+                        node=i,
                         hubs_required=hubs_req,
                         travel_time=t, id=iid,
                         parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
@@ -298,7 +298,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                     hubs_req = [(i, "bs"), (j, "bs")]
 
                     itineraries.append(Itinerary(
-                        origin=i, destination=j,
+                        node=i,
                         hubs_required=hubs_req,
                         travel_time=t, id=iid,
                         parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
@@ -311,7 +311,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                 # ========================================================
                 
                 
-                
+                #feedback.pushInfo("Recherche avc des hubs")
                 #CS + TC
                 useful_hubs = get_useful_hubs(
                         i, j, hubs_gdf, 
@@ -325,7 +325,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                         hubs_req = [(hub_id, "cs"), (j, "cs")]
 
                         itineraries.append(Itinerary(
-                            origin=i, destination=j,
+                            node=i,
                             hubs_required=hubs_req,
                             travel_time=t1,  id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
@@ -338,8 +338,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                     if t2 < t_pt * (1 - min_improvement) and t2 < t_max:
                         hubs_req = [(hub_id, "cs"), (i, "cs")]
                         itineraries.append(Itinerary(
-                            origin=i, destination=j,
-                            mode_seq=["cs", "pt"],
+                            node=i,
                             hubs_required=hubs_req,
                             travel_time=t2,  id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
@@ -360,7 +359,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                         hubs_req = [(hub_id, "bs"), (j, "bs")]
 
                         itineraries.append(Itinerary(
-                            origin=i, destination=j,
+                            node=i,
                             hubs_required=hubs_req,
                             travel_time=t1,  id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
@@ -374,14 +373,14 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                         hubs_req = [(hub_id, "bs"), (i, "bs")]
 
                         itineraries.append(Itinerary(
-                            origin=i, destination=j,
+                            node=i,
                             hubs_required=hubs_req,
                             travel_time=t2,  id=iid,
                             parking_demand=build_parking_demand(hubs_req, d_s, usage_rate),
                             poi_category = cate,
                         ))
                         iid += 1
-                        
+        feedback.pushInfo("Fin de la recherche")            
         iti_finaux = elimination_itineraires_domines(itineraries)
         #nodes_src, hubs_src, pois_src, threshold, budget, feedback
        
@@ -393,6 +392,14 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         (sink, dest_id) = self.parameterAsSink(
             parameters, self.OUTPUT_ITINERARIES, context, fields,
             QgsWkbTypes.NoGeometry)  #pas de géométrie : c'est une table pure
+        list_dict =[]
+        for it in iti_finaux:
+            list_dict.append({"id":it.id, "node": it.node,
+                              "poi_category": it.poi_category, 
+                              "travel_time": it.travel_time,
+                              "ratio_car": it.ratio_car, 
+                              "hubs_required": it.hubs_required,
+                              })
 
         write_poi_itineraries_to_sink(iti_finaux, sink)
         return {self.OUTPUT: dest_id}
