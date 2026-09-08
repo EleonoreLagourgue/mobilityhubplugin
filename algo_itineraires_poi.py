@@ -93,7 +93,7 @@ def elimination_itineraires_domines(itineraires):
 
     kept = []
     for od, itis in by_od.items():
-        its_sorted = itis.sort_values(by = ["travel_time"])
+        its_sorted = sorted(itis, key=lambda it: it.travel_time)
         non_dominated = []
         for cand in its_sorted:
             dominated = False
@@ -170,16 +170,16 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                                               ))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXPT, 
                                                               "Matrice de temps transportS en commun",
-                                                              extension = "csv"))
+                                                              extension = "parquet"))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXCAR, 
                                                               "Matrice de temps voiture",
-                                                              extension = "csv"))
+                                                              extension = "parquet"))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXBIKE, 
                                                               "Matrice de temps vélo",
-                                                              extension = "csv"))
+                                                              extension = "parquet"))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXWALK, 
                                                               "Matrice de temps marche",
-                                                              fileFilter='Fichiers csv (*.csv);;Fichiers Parquet (*.parquet)'))
+                                                              extension = "parquet"))
         self.addParameter(QgsProcessingParameterNumber(self.MAXRATIO, 
                                                        "Ratio max avec la voiture (ex: max 3x plus lent que la voiture)", 
                                                        defaultValue=3.0))
@@ -210,10 +210,12 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
 
         feedback.pushInfo("Construction des itinéraires potentiels (routage + élimination des dominés)...")
         #Import
-        matrix_pt = pd.read_csv(matrix_pt_path, index_col=0)
-        matrix_bike = pd.read_csv(matrix_b_path, index_col=0)
-        matrix_car = pd.read_csv(matrix_car_path, index_col=0)
-        matrix_walk = pd.read_csv(matrix_w_path, index_col=0)
+        matrix_pt = pd.read_parquet(matrix_pt_path,)
+        matrix_bike = pd.read_parquet(matrix_b_path)
+        matrix_car = pd.read_parquet(matrix_car_path)
+        matrix_walk = pd.read_parquet(matrix_w_path)
+        
+      
         #feedback.pushInfo(f"{matrix_car.columns} : colonnes matrice voiture")
         feedback.pushInfo(f"{len(matrix_walk)} : taille matrice marche")
 
@@ -390,14 +392,14 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         #Ecriture du résultat
         fields = make_poi_itinerary_fields()
         (sink, dest_id) = self.parameterAsSink(
-            parameters, self.OUTPUT_ITINERARIES, context, fields,
+            parameters, self.OUTPUT, context, fields,
             QgsWkbTypes.NoGeometry)  #pas de géométrie : c'est une table pure
         list_dict =[]
         for it in iti_finaux:
             list_dict.append({"id":it.id, "node": it.node,
                               "poi_category": it.poi_category, 
                               "travel_time": it.travel_time,
-                              "ratio_car": it.ratio_car, 
+                              "parking_demand": it.parking_demand, 
                               "hubs_required": it.hubs_required,
                               })
 

@@ -301,8 +301,8 @@ class MatriceTemps(QgsProcessingAlgorithm):
         
         self.addParameter(QgsProcessingParameterFileDestination(self.MATRIX, 
                                                                 "Fichier d'emplacement de la matrice de temps",
-                                                                fileFilter='*.csv',
-                                                                defaultValue='*.csv'))
+                                                                fileFilter='*.parquet',
+                                                                defaultValue='*.parquet'))
 
     def processAlgorithm(self, parameters, context, feedback):
         pop_layer = self.parameterAsVectorLayer(parameters, self.POP, context)#QgsProcessingFeatureSource
@@ -403,7 +403,7 @@ class MatriceTemps(QgsProcessingAlgorithm):
         
         #matrix.to_csv(fichier_sortie, index=True)
         try:
-            fichier_parquet = os.path.splitext(fichier_sortie)[0] + ".parquet"
+            fichier_parquet = fichier_sortie
             matrix.to_parquet(fichier_parquet, index=True)
             feedback.pushInfo(f"Fichier Parquet généré pour réutilisation : {fichier_parquet}")
         except Exception as e:

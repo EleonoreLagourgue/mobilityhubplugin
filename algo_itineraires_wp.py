@@ -440,6 +440,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
                               "travel_time": it.travel_time,
                               "ratio_car": it.ratio_car, 
                               "hubs_required": it.hubs_required,
+                              "parking_demand": it.parking_demand
                               })
         write_wp_itineraries_to_sink(iti_finaux, sink)
         return {self.OUTPUT: dest_id}
