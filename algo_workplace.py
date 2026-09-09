@@ -168,8 +168,8 @@ class LocateHubsWorkplaceAlgorithm(QgsProcessingAlgorithm):
         
         feedback.pushInfo(str(result["hubs"])[:25])
         hub_features = {f"hub_{f[hub_id]}": f for f in hubs_src.getFeatures()}
-        node_features = {f"pop_{f[node_id]}": f for f in nodes_src.getFeatures()}
-        hub_features.update(node_features)
+        #node_features = {f"pop_{f[node_id]}": f for f in nodes_src.getFeatures()}
+        #hub_features.update(node_features)
         feedback.pushInfo(str(hub_features))
 
         for (hub_id, mode) in result["hubs"]:

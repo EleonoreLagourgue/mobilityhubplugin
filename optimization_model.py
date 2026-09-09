@@ -103,6 +103,7 @@ def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300,
         for (l, m) in it.hubs_required:
             if not allow_unimodal_cs and ("cs" in l or "cs" in m):
                 prob += x[it.id] == 0
+            print(x[it.id])
             prob += x[it.id] <= y[(l, m)]                       # (2)
         prob += z[it.id] <= x[it.id]                            # (3)        
         for (l, m), demand in it.parking_demand.items():

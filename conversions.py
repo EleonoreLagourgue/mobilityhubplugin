@@ -270,11 +270,11 @@ def read_poi_itineraries_from_source(source):
         ))
     return itineraries
 
-def build_poi_problem_data(feedback,nodes_src, hubs_src, itineraries_src,
+def build_poi_problem_data(feedback,nodes_src, hubs_src, itineraries_src,pois_src,
                              poi_categories, travel_time_threshold,
                              modes=None, fixed_cost_hub=1000.0, fixed_cost_mode=None, budget=0,
                              node_id_field="id", node_pop_field="population",
-                             hub_id_field="id"):
+                             hub_id_field="id", dest_id_field = "id"):
     """
     Assemble le ProblemData complet à partir :
     - de la couche NODES (population par nœud),
@@ -288,7 +288,14 @@ def build_poi_problem_data(feedback,nodes_src, hubs_src, itineraries_src,
     population = {f"pop_{f[node_id_field]}": f[node_pop_field] for f in nodes_src.getFeatures()}
     hub_locations = [f[hub_id_field] for f in hubs_src.getFeatures()]
     node = [f"pop_{f[node_id_field]}" for f in nodes_src.getFeatures()]
+    dest = [f"dest_{f[dest_id_field]}" for f in pois_src.getFeatures()]
+
     hub_locations.extend(node)
+    hub_locations.extend(dest)
+    print("Ajout destinations et départs aux hubs")
+    
+    
+
 
 
     if modes is None:
@@ -297,6 +304,19 @@ def build_poi_problem_data(feedback,nodes_src, hubs_src, itineraries_src,
     fixed_cost_mode = {m: fixed_cost_mode.get(m, 0.0) for m in modes}
     
     itineraries = read_poi_itineraries_from_source(itineraries_src)
+    
+    hub_or_node_refs_in_itineraries = {
+    l for it in itineraries for (l, m) in it.hubs_required
+    }
+    
+    node_ids_from_nodes_src = {f"pop_{f[node_id_field]}" for f in nodes_src.getFeatures()}
+    dest_ids_from_nodes_src = {f"pop_{f[dest_id_field]}" for f in pois_src.getFeatures()}
+
+    missing = hub_or_node_refs_in_itineraries - set(hub_locations) - node_ids_from_nodes_src
+    feedback.pushInfo(f"Références manquantes dans hub_locations : {missing}")
+    missing = hub_or_node_refs_in_itineraries - set(hub_locations) - dest_ids_from_nodes_src
+    feedback.pushInfo(f"Références manquantes dans hub_locations : {missing}")
+
 
     return ProblemData(
         population=population,

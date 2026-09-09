@@ -165,6 +165,8 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
 
         node_id = self.parameterAsString(parameters, self.COLPOP, context)
         hub_id = self.parameterAsString(parameters, self.IDHUB, context)
+        dest_id = self.parameterAsString(parameters, self.IDDEST, context)
+
         feedback.pushInfo(category)
         idx = pois_src.fields().indexFromName(category)
         idx_travel = pois_src.fields().indexFromName(colonne_travel)
@@ -187,11 +189,13 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
         
         #modes : dans hubs_required 
         data = build_poi_problem_data(feedback,
-            nodes_src, hubs_src, itineraries_src,
+            nodes_src, hubs_src, itineraries_src,pois_src
             poi_categories=categories,
             travel_time_threshold=dict_travel,
             node_id_field = node_id,
             hub_id_field = hub_id,
+            dest_id_field = dest_id,
+
             fixed_cost_hub=1000.0,
             fixed_cost_mode={"bs": 300.0, "cs": 7500.0, "pt": 0.0},
             budget=budget,
@@ -212,8 +216,8 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
         )
 
         hub_features = {f"hub_{f['fid']}": f for f in hubs_src.getFeatures()}
-        node_features = {f"pop_{f['code_insee']}": f for f in nodes_src.getFeatures()}
-        hub_features.update(node_features)        
+        #node_features = {f"pop_{f['code_insee']}": f for f in nodes_src.getFeatures()}
+        #hub_features.update(node_features)        
         for (hub_id, mode) in result["hubs"]:
             src_feat = hub_features.get(hub_id)
             if src_feat is None:
