@@ -184,7 +184,7 @@ class CateServices(QgsProcessingAlgorithm):
             })
 
         # Champs de sortie = champs d'origine + champs de classification
-        out_fields = QgsFields(source.fields())
+        out_fields = QgsFields()
         out_fields.append(QgsField('category_id', QVariant.Int))
         out_fields.append(QgsField('category_name', QVariant.String))
         out_fields.append(QgsField('seuil_temps', QVariant.Int))
@@ -216,15 +216,17 @@ class CateServices(QgsProcessingAlgorithm):
                     # (équivalent à l'ordre des WHEN dans le CASE SQL)
                     if any(fnmatch.fnmatchcase(value_str, p) for p in cat['valeurs']):
                         matched = cat
+                        feedback.pushInfo(f"Catégorie trouvée : {str(cat)}")
                         break
 
             new_feat = QgsFeature(out_fields)
             new_feat.setGeometry(feat.geometry())
-            attrs = feat.attributes()
+            attrs = []
             if matched:
                 attrs += [matched['id'], matched['nom'], matched['limite'], matched['vitesse']]
             else:
                 attrs += [None, None, None, None]
+                continue
             new_feat.setAttributes(attrs)
 
             sink.addFeature(new_feat, QgsFeatureSink.FastInsert)

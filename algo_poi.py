@@ -171,17 +171,21 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
         idx = pois_src.fields().indexFromName(category)
         idx_travel = pois_src.fields().indexFromName(colonne_travel)
 
-        feedback.pushInfo(str(idx))
+        #feedback.pushInfo(str(idx))
         categories = set()
         dict_travel = {}
         
         for feat in pois_src.getFeatures():
             cat = feat[idx]
             travel = feat[idx_travel]
-            feedback.pushInfo(str(cat))
+            if isinstance(travel, QVariant):
+                travel = 0.0 if travel.isNull() else travel.value()
+            #feedback.pushInfo(str(cat))
             categories.add(str(cat))
             if cat not in dict_travel.keys():
-                dict_travel[str(cat)] = travel
+                dict_travel[str(cat)] = float(travel)
+                
+        print(dict_travel)
             
 
 
@@ -189,7 +193,7 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
         
         #modes : dans hubs_required 
         data = build_poi_problem_data(feedback,
-            nodes_src, hubs_src, itineraries_src,pois_src
+            nodes_src, hubs_src, itineraries_src,pois_src,
             poi_categories=categories,
             travel_time_threshold=dict_travel,
             node_id_field = node_id,

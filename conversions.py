@@ -260,11 +260,18 @@ def read_poi_itineraries_from_source(source):
     """
     itineraries = []
     for f in source.getFeatures():
+        travel_time = f["travel_time"]
+        if isinstance(travel_time, QVariant):
+            if travel_time.isNull():
+                travel_time = 0.0
+            else:
+                travel_time = travel_time.value()
+            
         itineraries.append(Itinerary(
             id=f["id"],
             node=f["node"],
             poi_category=f["poi_category"],
-            travel_time=f["travel_time"],
+            travel_time=float(travel_time),
             hubs_required=_decode_hub_requirements(f["hubs_required"]),
             parking_demand=_decode_parking_demand(f["parking_demand"]),
         ))
@@ -286,7 +293,7 @@ def build_poi_problem_data(feedback,nodes_src, hubs_src, itineraries_src,pois_sr
     couche : QgsProcessingParameterNumber/String/Matrix suffisent).
     """
     population = {f"pop_{f[node_id_field]}": f[node_pop_field] for f in nodes_src.getFeatures()}
-    hub_locations = [f[hub_id_field] for f in hubs_src.getFeatures()]
+    hub_locations = [f"hub_{f[hub_id_field]}" for f in hubs_src.getFeatures()]
     node = [f"pop_{f[node_id_field]}" for f in nodes_src.getFeatures()]
     dest = [f"dest_{f[dest_id_field]}" for f in pois_src.getFeatures()]
 
@@ -304,6 +311,23 @@ def build_poi_problem_data(feedback,nodes_src, hubs_src, itineraries_src,pois_sr
     fixed_cost_mode = {m: fixed_cost_mode.get(m, 0.0) for m in modes}
     
     itineraries = read_poi_itineraries_from_source(itineraries_src)
+    
+    big_m = {}
+    for p in poi_categories:
+        threshold = travel_time_threshold[p]
+        if threshold is None:
+            feedback.pushWarning(f"Pas de seuil pour la catégorie '{p}'.")
+            continue
+        
+        itin_p = [it for it in itineraries if it.poi_category == p]
+        if not itin_p:
+            big_m[p] = 1.0  # aucune contrainte réelle, valeur neutre
+            continue
+        
+        max_gap = float(max(it.travel_time - threshold for it in itin_p))
+        big_m[p] = max_gap * 1.01 if max_gap > 0 else 1.0
+        
+        feedback.pushInfo(f"big-M[{p}] = {big_m[p]:.2f}")
     
     hub_or_node_refs_in_itineraries = {
     l for it in itineraries for (l, m) in it.hubs_required
@@ -328,6 +352,7 @@ def build_poi_problem_data(feedback,nodes_src, hubs_src, itineraries_src,pois_sr
         fixed_cost_hub=fixed_cost_hub,
         fixed_cost_mode=fixed_cost_mode,
         budget=budget,
+        big_m = big_m
     )
 
 #%%WP

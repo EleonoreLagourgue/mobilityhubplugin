@@ -26,7 +26,27 @@ __author__ = 'Eleonore Lagourgue'
 __date__ = '2026-07-10'
 __copyright__ = '(C) 2026 by Eleonore Lagourgue'
 
+import importlib.util
+import subprocess
+import sys
 
+REQUIRED = {
+    "geopandas": "geopandas",
+    "shapely": "shapely",
+    "networkx": "networkx",
+    "osmnx": "osmnx",
+    "partridge": "partridge",
+    "pulp": "pulp",
+    "scipy": "scipy",
+    "pyarrow": "pyarrow",
+    "pyogrio": "pyogrio",
+    "geopy": "geopy",
+    "pyproj": "pyproj",
+}
+
+def _missing_packages():
+    return [pip_name for mod_name, pip_name in REQUIRED.items()
+            if importlib.util.find_spec(mod_name) is None]
 # noinspection PyPep8Naming
 def classFactory(iface):  # pylint: disable=invalid-name
     """Load MobilityHubPlugin class from file MobilityHubPlugin.
@@ -35,5 +55,17 @@ def classFactory(iface):  # pylint: disable=invalid-name
     :type iface: QgsInterface
     """
     #
+    missing = _missing_packages()
+    if missing:
+        from qgis.PyQt.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            None, "MobilityHubPlugin — Dépendances manquantes",
+            "Les bibliothèques Python suivantes sont requises et absentes :\n\n"
+            f"{', '.join(missing)}\n\n"
+            "Voulez-vous les installer automatiquement maintenant "
+            "(nécessite un redémarrage de QGIS ensuite) ?",
+        )
+        
     from .mobilityhubplugin import MobilityHubPluginPlugin
     return MobilityHubPluginPlugin()
+

@@ -35,7 +35,7 @@ class ProblemData:
     fixed_cost_hub: float        # c^F
     fixed_cost_mode: dict        # {mode: c_m^f}
     budget: float                 # B
-    big_m: float = 1e6
+    big_m: dict = None
 
 @dataclass
 class WorkplaceItinerary:
@@ -71,21 +71,35 @@ def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300,
     prob = pulp.LpProblem("poi_accessibility", pulp.LpMaximize)
     t0 = time.time()
     # --- variables ---
-    y = {(l, m): pulp.LpVariable(f"y_{l}_{m}", cat="Binary")
+    y = {(l, m): pulp.LpVariable(f"y_{l}_{m}", cat="Binary") #Hub installé en l avec mode m ?
          for l in hub_locations for m in data.modes}
-    e = {l: pulp.LpVariable(f"e_{l}", lowBound=0, upBound=data.fixed_cost_hub)
+    e = {l: pulp.LpVariable(f"e_{l}", lowBound=0, upBound=data.fixed_cost_hub) #Coûts d'installation
          for l in hub_locations}
-    u = {(l, m): pulp.LpVariable(f"u_{l}_{m}", lowBound=0, cat="Integer")
+    u = {(l, m): pulp.LpVariable(f"u_{l}_{m}", lowBound=0, cat="Integer") #Nombre de places de parking au hub
          for l in hub_locations for m in data.modes}
 
-    x = {it.id: pulp.LpVariable(f"x_{it.id}", cat="Binary") for it in data.itineraries}
-    z = {it.id: pulp.LpVariable(f"z_{it.id}", cat="Binary") for it in data.itineraries}
+    x = {it.id: pulp.LpVariable(f"x_{it.id}", cat="Binary") for it in data.itineraries} #Itinéraire réalisable ?
+    z = {it.id: pulp.LpVariable(f"z_{it.id}", cat="Binary") for it in data.itineraries} #Itinéraire permet de connecter
+    #catégorie p de Poi ?
     feedback.pushInfo("Initialisation des variables")
     
     nodes_pois = {(it.node, it.poi_category) for it in data.itineraries}
-    a = {np_: pulp.LpVariable(f"a_{np_[0]}_{np_[1]}", cat="Binary") for np_ in nodes_pois}
+    a = {np_: pulp.LpVariable(f"a_{np_[0]}_{np_[1]}", cat="Binary") for np_ in nodes_pois} #Itinéraire permet de connecter
+    #catégorie p dans la limite de temps ?
     
-    
+    #Diagnostic
+    problematic = []
+    for (i, j) in nodes_pois:
+        its_ij = [it for it in data.itineraries if it.node == i and it.poi_category == j]
+        viable = [
+            it for it in its_ij
+            if allow_unimodal_cs or not any("cs" in (l, m) for (l, m) in it.hubs_required)
+        ]
+        if not viable:
+            problematic.append((i, j, len(its_ij)))
+    feedback.pushInfo(f"Paires OD sans itinéraire viable : {len(problematic)} / {len(nodes_pois)}")
+    for i, j, n in problematic[:10]:
+        feedback.pushInfo(f"  {i} -> {j} : {n} itinéraires, tous forcés à 0 (cs unimodal)")
         
     # --- Objectif ---
     total_pop = sum(data.population.values())
@@ -103,7 +117,6 @@ def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300,
         for (l, m) in it.hubs_required:
             if not allow_unimodal_cs and ("cs" in l or "cs" in m):
                 prob += x[it.id] == 0
-            print(x[it.id])
             prob += x[it.id] <= y[(l, m)]                       # (2)
         prob += z[it.id] <= x[it.id]                            # (3)        
         for (l, m), demand in it.parking_demand.items():
@@ -114,8 +127,14 @@ def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300,
         its = [it for it in data.itineraries if it.node == node and it.poi_category == cat]
         prob += pulp.lpSum(z[it.id] for it in its) == 1           # (4)
         for it in its:
+            print(cat)
             t_hat = data.travel_time_threshold[cat]
-            prob += it.travel_time * z[it.id] <= t_hat + data.big_m * (1 - a[(node, cat)])  # (5)
+            print("Limite temps : ",t_hat)
+            
+            print("M : ", data.big_m[cat])
+            print("a : ",  a[(node, cat)])
+            print("z : ", z[it.id])
+            prob += it.travel_time * z[it.id] <= t_hat + data.big_m[cat] * (1 - a[(node, cat)])  # (5)
 
     # --- contrainte : places de parking ---
     

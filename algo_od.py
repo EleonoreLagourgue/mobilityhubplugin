@@ -43,10 +43,10 @@ class FormateODmatrix(QgsProcessingAlgorithm):
         return "Formater les données Origine-Destination"
 
     def group(self):
-        return 'Traitements annexes'
+        return 'Formatage préliminaire'
 
     def groupId(self):
-        return 'traitements_annexes'
+        return 'formatage'
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterFile(self.OD_MATRIX, 

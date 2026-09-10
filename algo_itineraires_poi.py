@@ -253,7 +253,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
 
             for row_b in dest_gdf.itertuples():
                 j = row_b[0]
-                cate = row_b[1]
+                cate = row_b.category_id
                 #feedback.pushInfo(f"ID destination :{j}")
 
                 if i== j:
