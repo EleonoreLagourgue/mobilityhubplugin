@@ -76,7 +76,7 @@ def get_useful_hubs(i, j, hubs_potentiels,
     """
     useful = []
     for hub_id in hubs_potentiels.index:
-        print(hub_id)
+        #print(hub_id)
          
         t1 = mat_pt.loc[i,hub_id] + TRANSFER_TIME + mat_car.loc[hub_id,j]
         t2 = mat_car.loc[i,hub_id] + TRANSFER_TIME + mat_pt.loc[hub_id,j]
@@ -84,6 +84,34 @@ def get_useful_hubs(i, j, hubs_potentiels,
         if (t1 < t_pt * (1 - min_improvement) and t1 < t_max) or \
            (t2 < t_pt * (1 - min_improvement) and t2 < t_max) :
             useful.append(hub_id)
+    return useful
+def get_useful_hubs_pairs(i, j, hubs_potentiels, 
+                    mat_pt, mat_car, mat_debut, t_pt, t_max, min_improvement,
+                    mat_fin = None):
+    if mat_fin is None:
+        mat_fin = mat_debut
+    useful = []
+    hubs_idx = hubs_potentiels.index
+    for id in hubs_idx:
+        hub = hubs_potentiels[id]
+        for id2 in hubs_idx:
+            if id == id2:
+                continue
+            tps_hubs = mat_car.loc[id, id2]
+            if tps_hubs <10 or tps_hubs == np.inf:
+                continue
+            
+            t1 = (mat_debut.loc[i,id] + TRANSFER_TIME +
+                mat_car.loc[id, id2] + TRANSFER_TIME +
+                mat_fin.loc[id2, j])
+            t2 = (mat_debut.loc[i,id] + TRANSFER_TIME +
+                mat_pt.loc[id, id2] + TRANSFER_TIME +
+                mat_fin.loc[id2, j])
+            if (t1 < t_pt * (1 - min_improvement) and t1 < t_max) or \
+                (t2 < t_pt * (1 - min_improvement) and t2 < t_max) :
+                useful.append((hub1, hub2, t1))
+        
+
     return useful
 def elimination_itineraires_domines(itineraires):
     by_od = defaultdict(list)
@@ -202,7 +230,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         min_improvement=self.parameterAsDouble(parameters, self.MINIMPRO, context)
         
         id_nodes = self.parameterAsString(parameters, self.IDPOP,context)
-        print(id_nodes)
+        #print(id_nodes)
         id_hubs = self.parameterAsString(parameters, self.IDHUB,context)
         pop_column = self.parameterAsString(parameters, self.COLPOP,context)
         id_dest = self.parameterAsString(parameters, self.IDDEST,context)
@@ -277,6 +305,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                     poi_category = cate,
                 ))
                 iid += 1
+                print("Temps pt ", t_pt)
                 #feedback.pushInfo(f"Ratio voiture / TC : {t_car/t_pt}")
 
                 # =====================================================
@@ -294,6 +323,8 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                         poi_category = cate,
                     ))
                     iid += 1
+                    #print("Temps cs ", t)
+
                     
                 t = matrix_bike[i][j]#vélo
                 if t < t_pt * (1 - min_improvement) and t < t_max:
@@ -307,6 +338,8 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                         poi_category = cate,
                     ))
                     iid += 1
+                    print("Temps vélo ", t)
+
                         
                 # ========================================================
                 #         Construction des itinéraires avec hubs
@@ -334,6 +367,8 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                             poi_category = cate,
                         ))
                         iid += 1
+                        #print("Temps cs& pt ", t1)
+
                     # Mode à demande jusqu'au hub, puis TC
                     t2 = (matrix_car[i][hub_id] + TRANSFER_TIME
                           + matrix_pt[hub_id][j])
@@ -347,6 +382,8 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                             poi_category = cate,
                         ))
                         iid += 1
+                        #print("Temps cs& pt ", t2)
+
                 
                 #BS + TC
                 useful_hubs = get_useful_hubs(
@@ -368,6 +405,8 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                             poi_category = cate,
                         ))
                         iid += 1
+                        #print("Temps bs& pt ", t1)
+
                     # Mode à demande jusqu'au hub, puis TC
                     t2 = (matrix_bike[i][hub_id] + TRANSFER_TIME
                           + matrix_pt[hub_id][j])
@@ -382,6 +421,8 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                             poi_category = cate,
                         ))
                         iid += 1
+                        #print("Temps bs& pt ", t2)
+
         feedback.pushInfo("Fin de la recherche")            
         iti_finaux = elimination_itineraires_domines(itineraries)
         #nodes_src, hubs_src, pois_src, threshold, budget, feedback
@@ -396,11 +437,13 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
             QgsWkbTypes.NoGeometry)  #pas de géométrie : c'est une table pure
         list_dict =[]
         for it in iti_finaux:
+            print(type(it.travel_time))
+            print("Temps final",it.travel_time)
             list_dict.append({"id":it.id, "node": it.node,
                               "poi_category": it.poi_category, 
-                              "travel_time": it.travel_time,
-                              "parking_demand": it.parking_demand, 
+                              "travel_time": float(it.travel_time),
                               "hubs_required": it.hubs_required,
+                              "parking_demand": it.parking_demand, 
                               })
 
         write_poi_itineraries_to_sink(iti_finaux, sink)

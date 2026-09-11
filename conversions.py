@@ -229,7 +229,11 @@ POI_ITINERARY_FIELDS = [
 def make_poi_itinerary_fields():
     fields = QgsFields()
     for name, qtype in POI_ITINERARY_FIELDS:
-        fields.append(QgsField(name, qtype))
+        field = QgsField(name, qtype)
+        if qtype == QVariant.Double:
+            field.setLength(20)
+            field.setPrecision(4)
+        fields.append(field)
     return fields
 
 
