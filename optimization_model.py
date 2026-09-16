@@ -147,14 +147,14 @@ def solve_poi_model(feedback, data: ProblemData, time_limit_s: int = 300,
             prob += demand <= u[(l, m)]
 
     # --- contraintes : coûts d'installation / budget ---
-    for l in data.hub_locations:
+    for l in hub_locations:
         for m in data.modes:
             prob += data.fixed_cost_hub * y[(l, m)] <= e[l]        # (7)
         prob += e[l] <= data.fixed_cost_hub
 
     prob += pulp.lpSum(
         e[l] + pulp.lpSum(data.fixed_cost_mode[m] * u[(l, m)] for m in data.modes)
-        for l in data.hub_locations
+        for l in hub_locations
     ) <= data.budget                                                # (8)
 
     feedback.pushInfo("Contraintes ajoutées")

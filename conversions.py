@@ -244,9 +244,17 @@ def write_poi_itineraries_to_sink(itineraries, sink):
     """
     fields = make_poi_itinerary_fields()
     for it in itineraries:
+        travel_time = it.travel_time
+        if hasattr(travel_time, "item"):
+            print("Item")
+            travel_time = travel_time.item()
+        elif travel_time is not None:
+            travel_time = float(travel_time)
+        print(type(travel_time))
+
         f = QgsFeature(fields)
         f.setAttributes([
-            it.id, it.node, it.poi_category, it.travel_time,
+            str(it.id), str(it.node), it.poi_category, it.travel_time,
             _encode_hub_requirements(it.hubs_required),
             _encode_parking_demand(it.parking_demand),
         ])

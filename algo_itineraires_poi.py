@@ -109,10 +109,11 @@ def get_useful_hubs_pairs(i, j, hubs_potentiels,
                 mat_fin.loc[id2, j])
             if (t1 < t_pt * (1 - min_improvement) and t1 < t_max) or \
                 (t2 < t_pt * (1 - min_improvement) and t2 < t_max) :
-                useful.append((hub1, hub2, t1))
+                useful.append((id, id2, t1))
         
 
     return useful
+
 def elimination_itineraires_domines(itineraires):
     by_od = defaultdict(list)
     for it in itineraires:
@@ -230,7 +231,6 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         min_improvement=self.parameterAsDouble(parameters, self.MINIMPRO, context)
         
         id_nodes = self.parameterAsString(parameters, self.IDPOP,context)
-        #print(id_nodes)
         id_hubs = self.parameterAsString(parameters, self.IDHUB,context)
         pop_column = self.parameterAsString(parameters, self.COLPOP,context)
         id_dest = self.parameterAsString(parameters, self.IDDEST,context)
@@ -254,7 +254,6 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         dest_gdf = gdf_from_layer_arrow(dest_layer)
         
         #feedback.pushInfo(f"{nodes_gdf[id_nodes][:5]} : index pop avant modif")
-        #print(nodes_gdf[id_nodes][:5])
 
         nodes_gdf[id_nodes] = "pop_" + nodes_gdf[id_nodes].astype(str)
         nodes_gdf = nodes_gdf.set_index(id_nodes)
@@ -291,7 +290,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
 
                 t_car = matrix_car.loc[i, j] #temps en voiture
                 t_pt  = matrix_pt.loc[i, j] #temps de comparaison
-                if t_car == np.inf or t_pt == np.inf:
+                if not np.isfinite(t_car) or not np.isfinite(t_pt):
                     continue
                 t_max = min(t_pt, max_ratio_vs_car * t_car)
                 
@@ -305,7 +304,6 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                     poi_category = cate,
                 ))
                 iid += 1
-                print("Temps pt ", t_pt)
                 #feedback.pushInfo(f"Ratio voiture / TC : {t_car/t_pt}")
 
                 # =====================================================
@@ -438,14 +436,16 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         list_dict =[]
         for it in iti_finaux:
             print(type(it.travel_time))
-            print("Temps final",it.travel_time)
+            #print("Temps final",it.travel_time)
             list_dict.append({"id":it.id, "node": it.node,
                               "poi_category": it.poi_category, 
                               "travel_time": float(it.travel_time),
                               "hubs_required": it.hubs_required,
                               "parking_demand": it.parking_demand, 
                               })
-
+        for list in list_dict:
+            for key, value in list.items():
+                print(f"{key}: {type(value)}")
         write_poi_itineraries_to_sink(iti_finaux, sink)
         return {self.OUTPUT: dest_id}
     

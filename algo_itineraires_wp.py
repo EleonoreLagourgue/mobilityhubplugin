@@ -93,6 +93,7 @@ def get_useful_hubs(i, j, hubs_potentiels,
            (t2 < t_pt * (1 - min_improvement) and t2 < t_max) :
             useful.append(hub_id)
     return useful
+
 def elimination_itineraires_domines(itineraires):
     by_od = defaultdict(list)
     for it in itineraires:
@@ -289,7 +290,7 @@ class BuildItinerariesWP(QgsProcessingAlgorithm):
 
                 t_car = matrix_car.loc[i, j] #temps en voiture
                 t_pt  = matrix_pt.loc[i, j] #temps de comparaison
-                if t_car == np.inf or t_pt == np.inf:
+                if not np.isfinite(t_car) or not np.isfinite(t_pt):
                     continue
                 t_max = min(t_pt, max_ratio_vs_car * t_car)
                 # ligne = od.query(f"{ori}=={str(i)} and {dest} == {str(j)}")
