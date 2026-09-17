@@ -42,7 +42,7 @@ class WorkplaceItinerary:
     id: str
     origin: str            # population node i
     destination: str        # population node j
-    travel_time: float       # t_s (temps du trajet public/intermodal)
+    travel_time: float       # t_s (temps du trajet)
     ratio_car: float         # r_s = temps voiture / temps de ce trajet (eq. 13)
     hubs_required: list    # [(hub_location, mode), ...]
     parking_demand: dict      # {(hub_location, mode): delta_lms}

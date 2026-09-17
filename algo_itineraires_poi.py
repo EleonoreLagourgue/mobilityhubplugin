@@ -191,14 +191,14 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterFeatureSource(self.DESTINATION,
                                                               "Destinations (si différent de nœuds de population) ",
                                                               [QgsProcessing.SourceType.TypeVectorPoint],
-                                                              optional = True))
+                                                              ))
                                                       
         self.addParameter(QgsProcessingParameterField(self.IDDEST, 
                                               "Colonne id pour la couche de destination",
                                               parentLayerParameterName=self.DESTINATION,
                                               ))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXPT, 
-                                                              "Matrice de temps transportS en commun",
+                                                              "Matrice de temps transports en commun",
                                                               extension = "parquet"))
         self.addParameter(QgsProcessingParameterFile(self.MATRIXCAR, 
                                                               "Matrice de temps voiture",
@@ -214,6 +214,7 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                                                        defaultValue=3.0))
         self.addParameter(QgsProcessingParameterNumber(self.MINIMPRO, 
                                                        "Critère de temps d'amélioration par rapport aux trasnports en commun (en %)", 
+                                                       type=QgsProcessingParameterNumber.Double,
                                                        defaultValue=0.10))
 
         self.addParameter(QgsProcessingParameterFeatureSink(
