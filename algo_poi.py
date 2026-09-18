@@ -220,8 +220,8 @@ class LocateHubsPOIAlgorithm(QgsProcessingAlgorithm):
         )
 
         hub_features = {f"hub_{f['fid']}": f for f in hubs_src.getFeatures()}
-        #node_features = {f"pop_{f['code_insee']}": f for f in nodes_src.getFeatures()}
-        #hub_features.update(node_features)        
+        node_features = {f"pop_{f['code_insee']}": f for f in nodes_src.getFeatures()}
+        hub_features.update(node_features)        
         for (hub_id, mode) in result["hubs"]:
             src_feat = hub_features.get(hub_id)
             if src_feat is None:

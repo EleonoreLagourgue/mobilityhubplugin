@@ -27,7 +27,9 @@ from .fonction_graphe import (crea_graphe, doublon_noeuds,
                               ponderer_distance_voiture,
                               ponderer_distance_velo,
                               ponderer_distance_pieton,
-                              ponderer_distance_train
+                              ponderer_distance_train,
+                              SOURCE_PROFILES,
+                              NO_FACILITY_VALUES
 )
 from mobilityhubplugin.conversions import (qgis_layer_to_gdf, 
                          gdf_geom_to_qgs_wkbtype,
@@ -38,6 +40,8 @@ from collections import OrderedDict
 
 import osmnx as ox
 import networkx as nx
+
+
 
 
 class BuildGraphAlgorithm(QgsProcessingAlgorithm):
@@ -52,8 +56,14 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
     DEFAULT_SPEED = 'DEFAULT_SPEED'
     MODE = "MODE"
     TOLERANCE = 'TOLERANCE'
+    COLAME ="COLAME"
+    SOURCE = 'SOURCE'
+    VALEURS_PERSONNALISEES = 'VALEURS_PERSONNALISEES'
     LIGNES = 'LIGNES'
     NOEUDS = "NOEUDS"
+    
+    SOURCE_OPTIONS = list(SOURCE_PROFILES.keys()) + ['Personnalisé']
+
     def __init__(self):
         super().__init__()
         
@@ -90,8 +100,34 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
                                                       self.tr("Colonne vitesse"), 
                                                       parentLayerParameterName=self.INPUT,
                                                       optional=True))
-        self.addParameter(QgsProcessingParameterString(self.DEFAULT_SPEED, self.tr("Vitesse par défaut"), defaultValue=50))
-       
+        self.addParameter(QgsProcessingParameterString(self.DEFAULT_SPEED, 
+                                                       self.tr("Vitesse par défaut"), 
+                                                       defaultValue=50))
+        
+        self.addParameter(QgsProcessingParameterField(self.COLAME, 
+                                                      self.tr("Colonne(s) aménagements"),
+                                                      parentLayerParameterName=self.INPUT,
+                                                      optional= False,
+                                                      allowMultiple = True))
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.SOURCE,
+                self.tr("Source des données (détermine les valeurs valides par colonne)"),
+                options=self.SOURCE_OPTIONS,
+                defaultValue=0
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterString(
+                self.VALEURS_PERSONNALISEES,
+                self.tr(
+                    "Valeurs indiquant un aménagement (mode Personnalisé uniquement, "
+                    "séparées par des virgules, ex: Piste cyclable,Bande cyclable)"
+                ),
+                optional=True
+            )
+        )
         
         self.addParameter(QgsProcessingParameterNumber(self.TOLERANCE, self.tr("Tolérance topologique (en mètres)"), defaultValue=0.0))
 
@@ -120,6 +156,11 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
         mode = self.parameterAsInt(parameters, self.MODE, context)
         colonne_vitesse =  self.parameterAsString(parameters, self.SPEED_FIELD, context)
         
+        col_ame = self.parameterAsStrings(parameters, self.COLAME, context)
+        source_idx = self.parameterAsEnum(parameters, self.SOURCE, context)
+        source_name = self.SOURCE_OPTIONS[source_idx]
+        valeurs_perso_str = self.parameterAsString(parameters, self.VALEURS_PERSONNALISEES, context)
+        
         if colonne_direction != "":
             feedback.pushInfo("La colonne est renseignée")
             feedback.pushInfo(f'{colonne_direction}')
@@ -143,32 +184,58 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
             value_backward = None
             value_both = None
             default_direction = None
+            
+        # Vérification des valeurs d'aménagements cyclables
+        if source_name == 'Personnalisé':
+            profile = None
+            custom_values = [v.strip() for v in valeurs_perso_str.split(',') if v.strip()] or None
+            if not custom_values:
+                feedback.pushWarning(
+                    "Mode Personnalisé sans valeurs renseignées : repli sur "
+                    "IS NOT NULL (hors valeurs 'vides' usuelles) pour toutes les colonnes."
+                )
+        else:
+            profile = SOURCE_PROFILES.get(source_name, {})
+            col_ame = []
+            for col in profile.keys():
+                idx = layer.fields().indexOf(col)
+                if idx == -1:
+                    feedback.pushInfo(f"Attention : attribut {col} pas présent dans la couche")
+                else:
+                    col_ame.append(col)
+                pass
+            custom_values = None
+
+        feedback.pushInfo(f"Colonnes sélectionnées : {col_ame} (source : {source_name})")
         
         gdf_route = qgis_layer_to_gdf(layer)
         feedback.pushInfo(f"mode : {mode}")
 
         feedback.pushInfo("Construction du graphe")
 
-     
+        # Choix du mode de transport
         if mode ==0:
             graph = crea_graphe(gdf_route, colonne_direction, value_forward, value_backward, value_both, mode ="drive")
             feedback.pushInfo("Vérification des doublons")
             graph_snapped = doublon_noeuds(graph, tolerance=tolerance)
             print(f"Nœuds avant : {graph.number_of_nodes()} | après : {graph_snapped.number_of_nodes()}")
             feedback.pushInfo("Calcul vitesse")
-            ponderer_distance_voiture(graph_snapped, colonne_vitesse)
+            ponderer_distance_voiture(graph_snapped, colonne_vitesse,col_ame, profile=profile, custom_values=custom_values)
+        
         elif mode == 1:
             graph = crea_graphe(gdf_route, colonne_direction, value_forward, value_backward, value_both, mode ="walk")
             feedback.pushInfo("Vérification des doublons")
             graph_snapped = doublon_noeuds(graph, tolerance=tolerance)
             feedback.pushInfo("Calcul vitesse")
-            ponderer_distance_pieton(graph_snapped, colonne_vitesse)
+            ponderer_distance_pieton(graph_snapped, colonne_vitesse,col_ame,profile=profile, custom_values=custom_values)
+        
         elif mode == 2:
             graph = crea_graphe(gdf_route, colonne_direction, value_forward, value_backward, value_both, mode ="bike")
             feedback.pushInfo("Vérification des doublons")
             graph_snapped = doublon_noeuds(graph, tolerance=tolerance)
             feedback.pushInfo("Calcul vitesse")
-            ponderer_distance_velo(graph_snapped)
+            ponderer_distance_velo(graph_snapped,col_ame,profile=profile, custom_values=custom_values)
+        
         elif mode == 3:
             graph = crea_graphe(gdf_route, colonne_direction, value_forward, value_backward, value_both, mode ="walk")
             feedback.pushInfo("Vérification des doublons")
@@ -179,6 +246,8 @@ class BuildGraphAlgorithm(QgsProcessingAlgorithm):
 
             feedback.pushInfo("Calcul vitesse")
             ponderer_distance_train(graph_snapped)
+            
+            
         feedback.pushInfo(f"Graphe construit : {graph_snapped.number_of_edges()} sommets, {graph_snapped.number_of_nodes()} arêtes")
         nodes, lines = ox.graph_to_gdfs(graph_snapped)
         nodes = nodes.reset_index()

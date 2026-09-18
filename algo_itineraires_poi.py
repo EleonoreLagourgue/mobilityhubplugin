@@ -113,6 +113,18 @@ def get_useful_hubs_pairs(i, j, hubs_potentiels,
         
 
     return useful
+# best_by_od = defaultdict(list)  # clé (node, poi_category)
+# def add_itinerary(it):
+#     key = (it.node, it.poi_category)
+#     lst = best_by_od[key]
+#     req_c = set(it.hubs_required)
+#     # est-il dominé par un itinéraire déjà gardé ?
+#     for kept in lst:
+#         if kept.travel_time <= it.travel_time and set(kept.hubs_required).issubset(req_c):
+#             return
+#     # sinon on l'ajoute et on nettoie ceux qu'il domine
+#     lst[:] = [k for k in lst if not (it.travel_time <= k.travel_time and req_c.issubset(set(k.hubs_required)))]
+#     lst.append(it)
 
 def elimination_itineraires_domines(itineraires):
     by_od = defaultdict(list)
@@ -269,6 +281,11 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
         hubs_gdf = hubs_gdf.set_index(id_hubs)
         
         usage_rate = {"bs": 0.001, "cs": 0.001, "pt": 1.0}
+        
+        # On cherche le POI le plus proche pour chaque catégorie
+        dest_ids_by_cat = {
+            cat: dest_gdf.index[dest_gdf["category_id"] == cat]
+            for cat in dest_gdf["category_id"].unique()}
 
         itineraries = []
         iid = 0 #compteur pour créer l'id de chaque itinéraire
@@ -278,23 +295,24 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
             #feedback.pushInfo(f"ID origine :{i}")
             d_s = pop.loc[str(i)] if (str(i) in pop.index ) else 0.0
             #feedback.pushInfo(f"d_s : {d_s}")
+            for cate, dest_ids in dest_ids_by_cat.items():
 
-            for row_b in dest_gdf.itertuples():
-                j = row_b[0]
-                cate = row_b.category_id
-                #feedback.pushInfo(f"ID destination :{j}")
-
-                if i== j:
-                    feedback.pushInfo(f"Mêmes rows : {row_a}, \n{row_b}")
-                    #Normalement impossible
+                # Temps TC vers tous les POI de la catégorie, triés du plus proche au plus loin
+                pt_times = matrix_pt.loc[i, dest_ids]
+                pt_times = pt_times[np.isfinite(pt_times)].sort_values()
+                if pt_times.empty:
                     continue
-
-                t_car = matrix_car.loc[i, j] #temps en voiture
-                t_pt  = matrix_pt.loc[i, j] #temps de comparaison
-                if not np.isfinite(t_car) or not np.isfinite(t_pt):
+                j = None
+                for cand_j in pt_times.index:
+                    if np.isfinite(matrix_car.loc[i, cand_j]):
+                        j = cand_j
+                        break
+                if j is None:
                     continue
+                t_pt = pt_times.loc[j]
+                t_car = matrix_car.loc[i, j]
                 t_max = min(t_pt, max_ratio_vs_car * t_car)
-                
+
                 # =====================================================
                 #          On ajoute toujours le temps en TC
                 # =====================================================
@@ -436,7 +454,6 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
             QgsWkbTypes.NoGeometry)  #pas de géométrie : c'est une table pure
         list_dict =[]
         for it in iti_finaux:
-            print(type(it.travel_time))
             #print("Temps final",it.travel_time)
             list_dict.append({"id":it.id, "node": it.node,
                               "poi_category": it.poi_category, 
@@ -444,9 +461,9 @@ class BuildItinerariesPOI(QgsProcessingAlgorithm):
                               "hubs_required": it.hubs_required,
                               "parking_demand": it.parking_demand, 
                               })
-        for list in list_dict:
-            for key, value in list.items():
-                print(f"{key}: {type(value)}")
+        # for list in list_dict:
+        #     for key, value in list.items():
+        #         print(f"{key}: {type(value)}")
         write_poi_itineraries_to_sink(iti_finaux, sink)
         return {self.OUTPUT: dest_id}
     

@@ -58,7 +58,7 @@ import numpy as np
 from scipy.stats import gaussian_kde
 import geopandas as gpd
 from skimage.feature import peak_local_max
-
+from shapely import Point
 
 class CreaHubsPot(QgsProcessingAlgorithm):
     """
@@ -180,6 +180,18 @@ class CreaHubsPot(QgsProcessingAlgorithm):
         services_layer = self.parameterAsVectorLayer(parameters, self.SERVICES, context)#QgsProcessingFeatureSource
         services_layer = self.parameterAsVectorLayer(parameters, self.ZONE_ACT, context)#QgsProcessingFeatureSource
         pop_layer = self.parameterAsVectorLayer(parameters, self.POP, context)
+        
+        grid_size = 200
+ 
+        # Bande passante du KDE (None = calcul automatique par la règle de Scott ; sinon un float)
+        KDE_BANDWIDTH = None
+         
+        # Distance minimale (en mètres, dans un CRS projeté) entre deux pics détectés
+        min_distance_m = 500
+         
+        # Seuil relatif (0-1) : ne garder que les pics dont la densité dépasse ce % du maximum global
+        RELATIVE_THRESHOLD = 0.15
+
         # =============================================================================
         #        Calcul centralité des routes  
         # =============================================================================
@@ -191,9 +203,9 @@ class CreaHubsPot(QgsProcessingAlgorithm):
         G = ox.graph_from_gdfs(nodes, edges)
         G_undirected = ox.convert.to_undirected(G)
     
-        bc = nx.betweenness_centrality(G_undirected, weight="length", normalized=True)
+        bc = nx.betweenness_centrality(G_undirected, weight="length", normalized=True, k =500)
         nx.set_node_attributes(G, bc, "betweenness")
-         
+        feedback.pushInfo("Calcul de centralité terminé")
          
         # =============================================================================
         #          Calcul concentration des services
@@ -212,7 +224,7 @@ class CreaHubsPot(QgsProcessingAlgorithm):
         xx, yy = np.mgrid[xmin:xmax:complex(grid_size), ymin:ymax:complex(grid_size)]
         positions = np.vstack([xx.ravel(), yy.ravel()])
         
-        print("Calcul du KDE sur la grille (peut prendre quelques secondes)...")
+        feedback.pushInfo("Calcul du KDE sur la grille (peut prendre quelques secondes)...")
         density = np.reshape(kde(positions), xx.shape)
         cell_size_x = (xmax - xmin) / grid_size
         min_distance_px = max(1, int(min_distance_m / cell_size_x))
@@ -243,7 +255,7 @@ class CreaHubsPot(QgsProcessingAlgorithm):
         
         gdf_peaks["ne_idx"] = ox.nearest_edges(G, x,y) #renvoie les 3
        
-        print(f"{len(gdf_peaks)} pic(s) de densité détecté(s) = centre(s)-ville(s) candidat(s).")
+        feedback.pushInfo(f"{len(gdf_peaks)} pic(s) de densité détecté(s) = centre(s)-ville(s) candidat(s).")
         cand =[]
         for cluster in gdf_peaks.iterrows():
             u,v,key = cluster["ne_idx"]

@@ -254,7 +254,7 @@ def write_poi_itineraries_to_sink(itineraries, sink):
 
         f = QgsFeature(fields)
         f.setAttributes([
-            str(it.id), str(it.node), it.poi_category, it.travel_time,
+            str(it.id), str(it.node), str(it.poi_category), travel_time,
             _encode_hub_requirements(it.hubs_required),
             _encode_parking_demand(it.parking_demand),
         ])

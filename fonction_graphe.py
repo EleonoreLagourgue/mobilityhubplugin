@@ -9,6 +9,7 @@ import  numpy as np
 import osmnx as ox
 import geopandas as gpd
 import pandas as pd
+import math
 # import shapely
 from shapely import Point, MultiPoint, LineString, MultiLineString
 # from shapely.ops import split, snap, unary_union
@@ -420,8 +421,75 @@ def snap_nodes(G, tolerance=1.0):
 
 
 #%%Fonctions de temps de trajet
+SOURCE_PROFILES = {
+    'OSM': {
+        'highway': ['cycleway'],
+        'cycleway': ['track', 'lane', 'shared_lane', 'opposite',
+                     'opposite_lane', 'opposite_track'],
+        'cycleway:left': ['track', 'lane', 'shared_lane', 'opposite_track'],
+        'cycleway:right': ['track', 'lane', 'shared_lane', 'opposite_track'],
+        'cycleway:both': ['track', 'lane', 'shared_lane'],
+        'bicycle': ['designated'],
+        'bicycle_road': ['yes'],
+    },
+    'IGN BD TOPO': {
+        # Classe "Tronçon de route" : la piste cyclable en site propre est
+        # une Nature à part entière ; les aménagements sur voirie partagée
+        # (bande, voie verte, vélorue...) sont dans "Nature de la restriction".
+    
+        'nature_de_la_restriction': [
+            'Piste cyclable', 'Voie verte', 'Vélorue',
+            'Chaussée à voie centrale banalisée',
+            'Aménagement mixte hors voie verte',
+            'Double sens cyclable non matérialisé',
+        ],
+    },
+}
+NO_FACILITY_VALUES = ['no', 'none', 'Aucun', 'Non', 'Sans objet', 'Sans valeur']
+def build_cycling_expr(columns, profile=None, custom_values=None, presence=True):
+    """
+    Construit une expression QGIS qui sélectionne (presence=True) ou exclut
+    (presence=False) les segments avec un aménagement cyclable.
 
-def ponderer_distance_pieton(graphe, colonne_vitesse):
+    - profile : dict {colonne: [valeurs valides]} issu de SOURCE_PROFILES,
+      ou None si on utilise custom_values.
+    - custom_values : liste de valeurs (mode "Personnalisé") appliquée telle
+      quelle à TOUTES les colonnes sélectionnées, utile pour une source non
+      répertoriée dans SOURCE_PROFILES.
+    """
+    profile = profile or {}
+    conditions = []
+    for col in columns:
+        valid_values = profile.get(col) or custom_values
+        if valid_values:
+            values_str = ", ".join(f"'{v}'" for v in valid_values)
+            if presence:
+                cond = f'"{col}" in ({values_str})'
+            else:
+                # NULL-safe : un champ NULL ne peut pas satisfaire "IN (...)",
+                # donc il ne peut pas non plus satisfaire "NOT IN (...)" en
+                # logique à trois valeurs (NULL, pas TRUE). On le traite
+                # explicitement comme une absence d'aménagement.
+                cond = f'(math.isnan({col}) or "{col}" not in ({values_str}))'
+        else:
+            # Ni profil ni valeurs personnalisées pour cette colonne :
+            # on retombe sur "non nul et différent des valeurs 'vides'"
+            no_values_str = ", ".join(f"'{v}'" for v in NO_FACILITY_VALUES)
+            if presence:
+                cond = f'not(math.isnan({col})) and "{col}" NOT IN ({no_values_str})'
+            else:
+                cond = f'(math.isnan({col}) or "{col}" in ({no_values_str}))'
+        conditions.append(cond)
+
+    # On construit l'expression
+    # voulue pour chaque mode :
+    # - présence = au moins une colonne indique un aménagement (OR)
+    # - absence  = aucune colonne n'indique un aménagement (AND)
+    if presence:
+        return " or ".join(conditions)
+    return " and ".join(conditions)
+
+def ponderer_distance_pieton(graphe, colonne_vitesse,columns, profile = None, presence=False, custom_values =None):
    
     for u, v, data in graphe.edges(data=True):
         nature_a_eviter = ["Bretelle", "Type autoroutier"]
@@ -448,6 +516,7 @@ def ponderer_distance_pieton(graphe, colonne_vitesse):
 
         #On exclut les autoroutes et autres routes
         #non empruntables à pied
+        expr = build_cycling_expr(columns, profile=profile, custom_values=custom_values, presence=presence)
         if data.get("nature") in nature_a_eviter or data.get(colonne_vitesse,0) > 60 or (data.get("cpx_classement_administratif") in classement and data.get("urbain") == "false" ):
             vitesse_numerique = 0
             data["travel_time"] = float("inf")
@@ -455,7 +524,7 @@ def ponderer_distance_pieton(graphe, colonne_vitesse):
         data["mode"] = 'walk'
         
         
-def ponderer_distance_velo(graphe):
+def ponderer_distance_velo(graphe,columns, profile=None, presence=True,custom_values =None):
    
     for u, v, data in graphe.edges(data=True):
         geom = data.get("geometry")
@@ -467,7 +536,8 @@ def ponderer_distance_velo(graphe):
             data["length"] = length
         else:
             length = data.get("length")
-        
+        expr = build_cycling_expr(columns, profile=profile, custom_values=custom_values, presence=presence)
+
         if "grade" in data:
             # z_depart = graphe.nodes[u]['elevation']
             # z_arrivee = graphe.nodes[v]['elevation']
@@ -483,7 +553,7 @@ def ponderer_distance_velo(graphe):
         data["mode"] = 'bike'
 
 
-def ponderer_distance_voiture(graphe,colonne_vitesse):
+def ponderer_distance_voiture(graphe,colonne_vitesse,columns, profile=None, presence=False,custom_values =None):
     
     nature = ("Chemin", "Sentier", "Escalier")
     restriction = ("Piste cyclable", "Voie verte")
@@ -508,7 +578,8 @@ def ponderer_distance_voiture(graphe,colonne_vitesse):
             length = data.get("length")
         vitesse_numerique = float(vitesse) if vitesse  else 50.0
         
-        
+        expr = build_cycling_expr(columns, profile=profile, custom_values=custom_values, presence=presence)
+
         if vitesse_numerique == 0 or data.get("nature") in nature or data.get("nature_de_la_restriction") in restriction:
             #On ne peut pas prendre ce tronçon en voiture
             data["travel_time"] = float("inf")

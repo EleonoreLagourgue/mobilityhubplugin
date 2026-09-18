@@ -17,7 +17,7 @@ Pour le bon fonctionnement du plugin, il faut fournir les données suivantes :
    Un fichier du réseau contenant des géométries de type linéaire. Par exemple, un réseau issu de la BDTOPO convient parfaitement.
 2. **Couche population :**
 	Un fichier de population contenant des géométries de type ponctuelle.
-3. **Données points d'intérêt ou flux origine-destination
+3. **Données points d'intérêt ou flux origine-destination**
 	Un fichier de points d'intérêt avec une géométrie ponctuelle ou un fichier csv 
 
 Ces fichiers doivent dépendre du même système de projection.
