@@ -189,8 +189,6 @@ class CreaHubsPot(QgsProcessingAlgorithm):
         # Distance minimale (en mètres, dans un CRS projeté) entre deux pics détectés
         min_distance_m = 500
          
-        # Seuil relatif (0-1) : ne garder que les pics dont la densité dépasse ce % du maximum global
-        RELATIVE_THRESHOLD = 0.15
 
         # =============================================================================
         #        Calcul centralité des routes  
