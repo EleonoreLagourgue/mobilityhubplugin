@@ -89,6 +89,9 @@ class CreaHubsPot(QgsProcessingAlgorithm):
     MODE = "MODE"
     WEIGHT = "WEIGHT"
     MATRIX = "MATRIX"
+    
+    OUTPUT = "OUTPUT"
+
    
     
     def createInstance(self):
@@ -195,13 +198,15 @@ class CreaHubsPot(QgsProcessingAlgorithm):
         # =============================================================================
         edges = gdf_from_layer_arrow(lignes_layer)
         nodes = gdf_from_layer_arrow(nodes_layer)
-        edges = gdf_from_layer_arrow(lignes_layer)
         nodes = nodes.set_index("osmid")
         edges = edges.set_index(["u", "v", "key"])
         G = ox.graph_from_gdfs(nodes, edges)
         G_undirected = ox.convert.to_undirected(G)
+        
+        n_nodes = G_undirected.number_of_nodes()
+        k_sample = min(500, n_nodes) if n_nodes > 2 else None
     
-        bc = nx.betweenness_centrality(G_undirected, weight="length", normalized=True, k =500)
+        bc = nx.betweenness_centrality(G_undirected, weight="length", normalized=True, k=k_sample)
         nx.set_node_attributes(G, bc, "betweenness")
         feedback.pushInfo("Calcul de centralité terminé")
          
