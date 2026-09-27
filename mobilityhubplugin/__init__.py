@@ -62,8 +62,7 @@ def classFactory(iface):  # pylint: disable=invalid-name
             None, "MobilityHubPlugin — Dépendances manquantes",
             "Les bibliothèques Python suivantes sont requises et absentes :\n\n"
             f"{', '.join(missing)}\n\n"
-            "Voulez-vous les installer automatiquement maintenant "
-            "(nécessite un redémarrage de QGIS ensuite) ?",
+            ,
         )
         
     from .mobilityhubplugin import MobilityHubPluginPlugin
