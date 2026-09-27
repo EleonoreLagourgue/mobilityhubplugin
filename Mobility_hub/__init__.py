@@ -58,7 +58,7 @@ def classFactory(iface):  # pylint: disable=invalid-name
     missing = _missing_packages()
     if missing:
         from qgis.PyQt.QtWidgets import QMessageBox
-        reply = QMessageBox.question(
+        QMessageBox.information(
             None, "MobilityHubPlugin — Dépendances manquantes",
             "Les bibliothèques Python suivantes sont requises et absentes :\n\n"
             f"{', '.join(missing)}\n\n"
