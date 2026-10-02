@@ -42,6 +42,8 @@ REQUIRED = {
     "pyogrio": "pyogrio",
     "geopy": "geopy",
     "pyproj": "pyproj",
+    "fnmatch": "fnmatch",
+    "skimage": "skimage",
 }
 
 def _missing_packages():

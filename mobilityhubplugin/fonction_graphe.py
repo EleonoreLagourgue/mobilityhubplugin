@@ -9,7 +9,6 @@ import  numpy as np
 import osmnx as ox
 import geopandas as gpd
 import pandas as pd
-import math
 # import shapely
 from shapely import Point, MultiPoint, LineString, MultiLineString
 # from shapely.ops import split, snap, unary_union
@@ -17,7 +16,6 @@ import matplotlib.pyplot as plt
 import re
 #import scipy
 from scipy.spatial import KDTree
-import sqlalchemy
 #%%Création graphe
 def safe_key(coord):
     return f"{coord[0]:.3f}, {coord[1]:.3f}"
